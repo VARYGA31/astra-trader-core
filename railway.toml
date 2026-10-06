@@ -1,8 +1,0 @@
-[build]
-builder = "RAILPACK"
-
-[deploy]
-startCommand = "python worker.py"
-healthcheckPath = "/health"
-healthcheckTimeout = 30
-restartPolicyType = "ON_FAILURE"
