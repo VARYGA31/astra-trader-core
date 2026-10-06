@@ -34,17 +34,18 @@ OPENAI_REASONING_EFFORT = os.getenv("OPENAI_REASONING_EFFORT", "medium")
 
 MARKETTWITS_URL = os.getenv("MARKETTWITS_URL", "https://t.me/s/markettwits")
 
-# Execution mode: paper | bybit_testnet
+# Execution mode: paper | okx_demo
 EXECUTION_MODE = os.getenv("EXECUTION_MODE", "paper").strip().lower()
 TRADING_TIMEFRAME = os.getenv("TRADING_TIMEFRAME", "1h")
 
-# Bybit Testnet secrets: NEVER commit real values to GitHub.
-BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "").strip()
-BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "").strip()
-BYBIT_CATEGORY = os.getenv("BYBIT_CATEGORY", "linear")
-BYBIT_POSITION_IDX = int(os.getenv("BYBIT_POSITION_IDX", "0"))  # one-way mode
+# OKX Demo Trading credentials. Never commit actual values to GitHub.
+OKX_API_KEY = os.getenv("OKX_API_KEY", "").strip()
+OKX_API_SECRET = os.getenv("OKX_API_SECRET", "").strip()
+OKX_API_PASSPHRASE = os.getenv("OKX_API_PASSPHRASE", "").strip()
+OKX_BASE_URL = os.getenv("OKX_BASE_URL", "https://www.okx.com").rstrip("/")
+OKX_TD_MODE = os.getenv("OKX_TD_MODE", "isolated").strip()
 
-# Telegram notification bot
+# Telegram notifications
 TELEGRAM_ENABLED = os.getenv("TELEGRAM_ENABLED", "false").lower() == "true"
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
