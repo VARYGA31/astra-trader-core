@@ -1,0 +1,9 @@
+Delete the old files in the GitHub repository root, then upload ALL files from this package.
+
+Keep no duplicate old versions such as:
+paper_execution_v2.py
+astra_market_snapshot_v2.py
+old trade_cycle copies
+old news_snapshot copies
+
+After upload, the repository root should match this package.
