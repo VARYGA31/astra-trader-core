@@ -12,7 +12,8 @@ def load_state():
     if not os.path.exists(STATE_FILE):
         return {
             "initial_equity": 100.0,
-            "cash": 100.0,
+            "account_equity": 100.0,
+            "free_cash": 100.0,
             "realized_pnl": 0.0,
             "open_positions": [],
             "closed_positions": [],
@@ -28,12 +29,24 @@ def save_state(state):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
+def drawdown_pct(state):
+    init_eq = float(state["initial_equity"])
+    eq = float(state["account_equity"])
+    return max(0.0, (init_eq - eq) / init_eq) if init_eq > 0 else 1.0
+
+def maybe_halt(state):
+    if drawdown_pct(state) >= 0.25:
+        state["trading_halted"] = True
+    return state["trading_halted"]
+
 def init_state(initial_equity=100.0, force=False):
     if os.path.exists(STATE_FILE) and not force:
         return {"status":"EXISTS","state_file":STATE_FILE,"state":load_state()}
+    eq = float(initial_equity)
     state = {
-        "initial_equity": float(initial_equity),
-        "cash": float(initial_equity),
+        "initial_equity": eq,
+        "account_equity": eq,
+        "free_cash": eq,
         "realized_pnl": 0.0,
         "open_positions": [],
         "closed_positions": [],
@@ -43,21 +56,6 @@ def init_state(initial_equity=100.0, force=False):
     }
     save_state(state)
     return {"status":"INITIALIZED","state_file":STATE_FILE,"state":state}
-
-def equity_from_state(state):
-    # Until live mark-to-market is added, equity = cash + realized PnL basis.
-    # Open unrealized PnL is not included unless passed to status later.
-    return float(state["cash"])
-
-def drawdown_pct(state):
-    init_eq = float(state["initial_equity"])
-    eq = equity_from_state(state)
-    return max(0.0, (init_eq - eq) / init_eq) if init_eq > 0 else 1.0
-
-def maybe_halt(state):
-    if drawdown_pct(state) >= 0.25:
-        state["trading_halted"] = True
-    return state["trading_halted"]
 
 def open_position(risk_json_path):
     state = load_state()
@@ -73,14 +71,13 @@ def open_position(risk_json_path):
 
     asset = str(risk.get("asset","")).upper()
     action = str(risk.get("action","")).upper()
+
     if asset not in ALLOWED_ASSETS:
         return {"status":"REJECTED","reason":"TRADE_NOT_ALLOWED"}
     if action not in {"LONG","SHORT"}:
         return {"status":"REJECTED","reason":"INVALID_ACTION"}
-
     if len(state["open_positions"]) >= 2:
         return {"status":"REJECTED","reason":"MAX_OPEN_POSITIONS"}
-
     if any(p["asset"] == asset for p in state["open_positions"]):
         return {"status":"REJECTED","reason":"DUPLICATE_ASSET_POSITION"}
 
@@ -88,8 +85,8 @@ def open_position(risk_json_path):
     leverage = float(risk["leverage"])
     margin = float(risk["margin_required_usd"])
 
-    if margin > state["cash"]:
-        return {"status":"REJECTED","reason":"INSUFFICIENT_PAPER_CASH"}
+    if margin > float(state["free_cash"]):
+        return {"status":"REJECTED","reason":"INSUFFICIENT_FREE_CASH"}
 
     pos = {
         "id": str(uuid.uuid4())[:8],
@@ -105,14 +102,15 @@ def open_position(risk_json_path):
         "status": "OPEN",
     }
 
-    state["cash"] -= margin
+    state["free_cash"] -= margin
     state["open_positions"].append(pos)
     save_state(state)
 
     return {
         "status":"PAPER_OPENED",
         "position":pos,
-        "paper_cash_remaining":state["cash"],
+        "account_equity":state["account_equity"],
+        "free_cash_remaining":state["free_cash"],
         "state_file":STATE_FILE,
     }
 
@@ -131,8 +129,8 @@ def close_position(position_id, exit_price):
     else:
         pnl = notional * ((entry - exit_price) / entry)
 
-    # Release margin and apply PnL. Fees/slippage are intentionally not modeled yet.
-    state["cash"] += float(pos["margin_used_usd"]) + pnl
+    state["free_cash"] += float(pos["margin_used_usd"]) + pnl
+    state["account_equity"] += pnl
     state["realized_pnl"] += pnl
 
     pos["exit_price"] = exit_price
@@ -148,7 +146,8 @@ def close_position(position_id, exit_price):
     return {
         "status":"PAPER_CLOSED",
         "position":pos,
-        "paper_cash":state["cash"],
+        "account_equity":state["account_equity"],
+        "free_cash":state["free_cash"],
         "realized_pnl_total":state["realized_pnl"],
         "drawdown_pct":drawdown_pct(state),
         "trading_halted":state["trading_halted"],
@@ -158,12 +157,18 @@ def status():
     state = load_state()
     maybe_halt(state)
     save_state(state)
+    current_exposure = sum(float(p["notional_usd"]) for p in state["open_positions"])
+    margin_used = sum(float(p["margin_used_usd"]) for p in state["open_positions"])
     return {
         "status":"OK",
         "initial_equity":state["initial_equity"],
-        "paper_cash":state["cash"],
+        "account_equity":state["account_equity"],
+        "free_cash":state["free_cash"],
         "realized_pnl":state["realized_pnl"],
         "open_positions":state["open_positions"],
+        "open_positions_count":len(state["open_positions"]),
+        "current_exposure_usd":current_exposure,
+        "margin_used_usd":margin_used,
         "closed_positions_count":len(state["closed_positions"]),
         "drawdown_pct":drawdown_pct(state),
         "trading_halted":state["trading_halted"],
@@ -174,9 +179,7 @@ def main():
     if len(sys.argv) < 2:
         print(json.dumps({"error":"usage: init|status|open|close"}, ensure_ascii=False))
         raise SystemExit(2)
-
     cmd = sys.argv[1].lower()
-
     if cmd == "init":
         eq = float(sys.argv[2]) if len(sys.argv) > 2 else 100.0
         force = "--force" in sys.argv
@@ -193,7 +196,6 @@ def main():
         result = close_position(sys.argv[2], float(sys.argv[3]))
     else:
         result = {"status":"REJECTED","reason":"UNKNOWN_COMMAND"}
-
     print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
 
 if __name__ == "__main__":
