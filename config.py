@@ -28,6 +28,7 @@ AUTO_DECISION = os.getenv("AUTO_DECISION", "false").lower() == "true"
 AUTO_PAPER_EXECUTION = os.getenv("AUTO_PAPER_EXECUTION", "true").lower() == "true"
 
 PORT = int(os.getenv("PORT", "8080"))
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-6-astra")
 OPENAI_PROMPT_ID = os.getenv("OPENAI_PROMPT_ID", "").strip()
 OPENAI_REASONING_EFFORT = os.getenv("OPENAI_REASONING_EFFORT", "medium")

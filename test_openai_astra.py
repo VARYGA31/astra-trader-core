@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import sys
+import os
 
 import config
 import trade_cycle
@@ -15,7 +16,7 @@ out = {
     "will_execute_trade": False,
 }
 
-if not config.OPENAI_API_KEY:
+if not getattr(config, "OPENAI_API_KEY", "") and not os.getenv("OPENAI_API_KEY", "").strip():
     out.update({"status":"FAILED","reason":"OPENAI_API_KEY_MISSING"})
     print(json.dumps(out, ensure_ascii=False, indent=2))
     raise SystemExit(1)
