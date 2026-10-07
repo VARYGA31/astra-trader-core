@@ -10,7 +10,7 @@ required=[
 "astra_client.py","worker.py","exchange_adapter.py",
 "telegram_notifier.py","okx_demo_adapter.py","okx_position_monitor.py",
 "execution_router.py","demo_ledger.py","test_okx_telegram.py",
-"preflight_all.py","requirements.txt","railway.toml"
+"preflight_all.py","test_openai_astra.py","test_okx_roundtrip.py","requirements.txt","railway.toml"
 ]
 
 missing=[x for x in required if not Path(x).exists()]
