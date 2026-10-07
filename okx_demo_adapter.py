@@ -181,32 +181,102 @@ class OKXDemoAdapter:
             time.sleep(0.8)
         return last
 
-    def open_market(self, asset, action, notional_usd, leverage, stop_loss):
+    def _split_protection(self, asset, qty, stop_loss, take_profit_1, take_profit_2):
+        """Build OKX attached protection.
+
+        If the order is large enough for two valid TP child sizes, attach TP1+TP2
+        as split TPs plus one exchange-side SL. Otherwise attach a single TP2+SL
+        pair so the position is still fully protected on-exchange.
+        """
+        info = self.instrument(asset)
+        lot = Decimal(str(info["lotSz"]))
+        min_sz = Decimal(str(info["minSz"]))
+        q = Decimal(str(qty))
+
+        if not config.EXCHANGE_SIDE_TP_SL:
+            return [], {"mode":"DISABLED"}
+
+        half = self._floor_step(q / Decimal("2"), lot)
+        rest = q - half
+
+        if half >= min_sz and rest >= min_sz:
+            algos = [
+                {
+                    "tpTriggerPx": str(take_profit_1),
+                    "tpTriggerPxType": "mark",
+                    "tpOrdPx": "-1",
+                    "sz": format(half, "f"),
+                },
+                {
+                    "tpTriggerPx": str(take_profit_2),
+                    "tpTriggerPxType": "mark",
+                    "tpOrdPx": "-1",
+                    "sz": format(rest, "f"),
+                },
+                {
+                    "slTriggerPx": str(stop_loss),
+                    "slTriggerPxType": "mark",
+                    "slOrdPx": "-1",
+                },
+            ]
+            return algos, {
+                "mode":"SPLIT_TP1_TP2_PLUS_SL",
+                "tp1_qty_contracts":float(half),
+                "tp2_qty_contracts":float(rest),
+            }
+
+        # Small position: OKX cannot split below minSz, so protect the whole
+        # position with TP2 + SL in one attached algo.
+        algos = [{
+            "tpTriggerPx": str(take_profit_2),
+            "tpTriggerPxType": "mark",
+            "tpOrdPx": "-1",
+            "slTriggerPx": str(stop_loss),
+            "slTriggerPxType": "mark",
+            "slOrdPx": "-1",
+        }]
+        return algos, {
+            "mode":"FULL_TP2_PLUS_SL",
+            "tp1_qty_contracts":0.0,
+            "tp2_qty_contracts":float(q),
+        }
+
+    def open_market(self, asset, action, notional_usd, leverage, stop_loss, take_profit_1, take_profit_2):
         self.ensure_net_mode()
+
+        # Hard duplicate-position protection at the exchange adapter layer.
+        if config.ONE_POSITION_PER_ASSET and self.get_position(asset):
+            raise RuntimeError(f"ASSET_ALREADY_HAS_OPEN_POSITION:{asset}")
+
         self.set_leverage(asset, leverage)
         qty, usd_per_contract = self.contracts_for_notional(asset, notional_usd)
         side = "buy" if action == "LONG" else "sell"
+
+        algos, protection = self._split_protection(
+            asset, qty, stop_loss, take_profit_1, take_profit_2
+        )
+
         payload = {
             "instId": self.inst_id(asset),
             "tdMode": config.OKX_TD_MODE,
             "side": side,
             "ordType": "market",
             "sz": qty,
-            "attachAlgoOrds": [{
-                "slTriggerPx": str(stop_loss),
-                "slTriggerPxType": "mark",
-                "slOrdPx": "-1",
-            }],
         }
+        if algos:
+            payload["attachAlgoOrds"] = algos
+
         r = self.private_post("/api/v5/trade/order", payload)
         row = r.get("data", [])[0]
         if row.get("sCode") not in (None, "", "0"):
             raise RuntimeError(f"OKX_ORDER_REJECTED:{row}")
+
         ord_id = row.get("ordId")
         fill = self.wait_filled(asset, ord_id)
         avg_px = float((fill or {}).get("avgPx") or self.ticker(asset))
         fill_sz = float((fill or {}).get("accFillSz") or qty)
         actual_notional = fill_sz * usd_per_contract
+
         return {
             "order_id": ord_id,
             "inst_id": self.inst_id(asset),
@@ -215,6 +285,7 @@ class OKXDemoAdapter:
             "entry": avg_px,
             "leverage": float(leverage),
             "position_value_usd_approx": actual_notional,
+            "protection": protection,
         }
 
     def positions(self, asset=None):
@@ -230,6 +301,61 @@ class OKXDemoAdapter:
             if abs(qty) > 0:
                 return p
         return None
+
+    def position_notional_usd(self, asset, position):
+        raw = position.get("notionalUsd")
+        try:
+            if raw not in (None, ""):
+                return abs(float(raw))
+        except Exception:
+            pass
+
+        qty = abs(float(position.get("pos") or 0))
+        mark = float(position.get("markPx") or position.get("last") or position.get("avgPx") or self.ticker(asset))
+        info = self.instrument(asset)
+        ct_val = float(info.get("ctVal") or 1)
+        ct_ccy = str(info.get("ctValCcy") or "")
+        base_ccy = self.inst_id(asset).split("-")[0]
+
+        if ct_ccy == base_ccy:
+            return qty * ct_val * mark
+        if ct_ccy in {"USD","USDT","USDC"}:
+            return qty * ct_val
+        raise RuntimeError(f"OKX_UNSUPPORTED_CONTRACT_VALUE_CCY:{ct_ccy}")
+
+    def exchange_active_summary(self):
+        rows = self.positions()
+        assets = []
+        exposure = 0.0
+        details = []
+        inst_to_asset = {self.inst_id(a): a for a in config.ALLOWED_ASSETS}
+        for p in rows:
+            try:
+                qty = float(p.get("pos") or 0)
+            except Exception:
+                qty = 0.0
+            if abs(qty) <= 0:
+                continue
+            asset = inst_to_asset.get(p.get("instId"))
+            if not asset:
+                continue
+            notion = self.position_notional_usd(asset, p)
+            assets.append(asset)
+            exposure += notion
+            details.append({
+                "asset":asset,
+                "instId":p.get("instId"),
+                "qty_contracts":abs(qty),
+                "notional_usd":notion,
+                "avgPx":p.get("avgPx"),
+                "markPx":p.get("markPx"),
+            })
+        return {
+            "open_positions":len(assets),
+            "current_exposure_usd":exposure,
+            "assets":assets,
+            "details":details,
+        }
 
     def close_market(self, asset, side, qty_contracts):
         qty = self.normalize_qty(asset, qty_contracts)

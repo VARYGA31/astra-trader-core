@@ -40,3 +40,9 @@ OKX_TD_MODE=os.getenv("OKX_TD_MODE","isolated").strip()
 TELEGRAM_ENABLED=os.getenv("TELEGRAM_ENABLED","false").lower()=="true"
 TELEGRAM_BOT_TOKEN=os.getenv("TELEGRAM_BOT_TOKEN","").strip()
 TELEGRAM_CHAT_ID=os.getenv("TELEGRAM_CHAT_ID","").strip()
+
+# Trade-quality / exchange-protection rules
+MIN_TP1_R = float(os.getenv("MIN_TP1_R", "1.0"))
+MIN_TP2_R = float(os.getenv("MIN_TP2_R", "1.8"))
+ONE_POSITION_PER_ASSET = os.getenv("ONE_POSITION_PER_ASSET", "true").lower() == "true"
+EXCHANGE_SIDE_TP_SL = os.getenv("EXCHANGE_SIDE_TP_SL", "true").lower() == "true"

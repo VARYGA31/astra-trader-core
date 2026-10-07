@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import json
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime
 
 import config
 from okx_demo_adapter import OKXDemoAdapter
@@ -26,7 +26,10 @@ def save(data):
 
 def register_trade(record):
     d = load()
-    d[record["asset"]] = record
+    asset = record["asset"]
+    if asset in d:
+        raise RuntimeError(f"LOCAL_STATE_ALREADY_HAS_OPEN_POSITION:{asset}")
+    d[asset] = record
     save(d)
 
 def remove_trade(asset):
@@ -35,13 +38,28 @@ def remove_trade(asset):
     save(d)
 
 def active_summary():
-    d = load()
-    exposure = sum(float(x.get("remaining_notional_usd", x.get("notional_usd", 0))) for x in d.values())
-    return {
-        "open_positions": len(d),
-        "current_exposure_usd": exposure,
-        "assets": list(d.keys()),
-    }
+    """Use OKX as source of truth, not the local JSON ledger."""
+    if config.EXECUTION_MODE != "okx_demo":
+        return {"open_positions":0,"current_exposure_usd":0.0,"assets":[],"details":[]}
+    return OKXDemoAdapter().exchange_active_summary()
+
+def _classify_close(exit_px, rec):
+    if not exit_px:
+        return "EXCHANGE_CLOSE"
+    levels = [
+        ("STOP_LOSS", rec.get("stop_loss")),
+        ("TAKE_PROFIT_1", rec.get("take_profit_1")),
+        ("TAKE_PROFIT_2", rec.get("take_profit_2")),
+    ]
+    best = ("EXCHANGE_CLOSE", None)
+    for name, px in levels:
+        if px is None:
+            continue
+        dist = abs(exit_px - float(px))
+        if best[1] is None or dist < best[1]:
+            best = (name, dist)
+    tolerance = max(abs(exit_px) * 0.004, 1e-12)
+    return best[0] if best[1] is not None and best[1] <= tolerance else "EXCHANGE_CLOSE"
 
 def check_once():
     if config.EXECUTION_MODE != "okx_demo":
@@ -50,6 +68,13 @@ def check_once():
     adapter = OKXDemoAdapter()
     state = load()
     results = []
+
+    # OKX is authoritative. This also exposes any unexpected/untracked positions.
+    exchange = adapter.exchange_active_summary()
+    tracked_assets = set(state.keys())
+    untracked = [x for x in exchange["assets"] if x not in tracked_assets]
+    for asset in untracked:
+        results.append({"asset":asset,"status":"UNTRACKED_EXCHANGE_POSITION"})
 
     for asset, rec in list(state.items()):
         pos = adapter.get_position(asset)
@@ -62,22 +87,18 @@ def check_once():
                     opened_ms = int(datetime.fromisoformat(opened_at.replace("Z","+00:00")).timestamp() * 1000)
                 except Exception:
                     opened_ms = None
+
             hist = adapter.wait_position_history(asset, opened_at_ms=opened_ms, timeout=10) or {}
             pnl = float(hist.get("realizedPnl") or 0)
             exit_px = float(hist.get("closeAvgPx") or 0) if hist.get("closeAvgPx") else None
-            reason = "EXCHANGE_CLOSE"
-            stop = rec.get("stop_loss")
-            if exit_px and stop:
-                tolerance = max(abs(float(stop))*0.002, 1e-12)
-                if abs(exit_px - float(stop)) <= tolerance:
-                    reason = "STOP_LOSS"
+            reason = _classify_close(exit_px, rec)
 
             message = {
                 **rec,
-                "exit_price": exit_px,
-                "pnl_usd": pnl,
-                "reason": reason,
-                "mode": "OKX DEMO",
+                "exit_price":exit_px,
+                "pnl_usd":pnl,
+                "reason":reason,
+                "mode":"OKX DEMO",
             }
             telegram_notifier.notify_close(message)
             trade_journal.append_event({"event":"OKX_POSITION_CLOSED", **message})
@@ -87,56 +108,61 @@ def check_once():
             results.append({"asset":asset,"status":"CLOSED","reason":reason,"pnl_usd":pnl})
             continue
 
-        mark = float(pos.get("markPx") or pos.get("last") or pos.get("avgPx") or 0)
         qty = abs(float(pos.get("pos") or 0))
-        side = rec["side"]
-        tp1 = rec.get("take_profit_1")
-        tp2 = rec.get("take_profit_2")
+        last_qty = float(rec.get("last_qty_contracts", rec.get("qty_contracts", qty)))
 
-        hit_tp1 = (
-            tp1 is not None and not rec.get("tp1_taken")
-            and ((side=="LONG" and mark >= float(tp1)) or (side=="SHORT" and mark <= float(tp1)))
-        )
-        hit_tp2 = (
-            tp2 is not None
-            and ((side=="LONG" and mark >= float(tp2)) or (side=="SHORT" and mark <= float(tp2)))
-        )
+        # Detect exchange-side TP1 reduction. Do NOT submit another close order here.
+        if qty + 1e-12 < last_qty:
+            closed_qty = last_qty - qty
+            rec["tp1_taken"] = True
+            rec["last_qty_contracts"] = qty
+            if last_qty > 0:
+                ratio = qty / last_qty
+                rec["remaining_notional_usd"] = float(
+                    rec.get("remaining_notional_usd", rec.get("notional_usd",0))
+                ) * ratio
+            state[asset] = rec
+            save(state)
 
-        if hit_tp2:
-            adapter.close_market(asset, side, qty)
-            results.append({"asset":asset,"status":"TP2_CLOSE_SUBMITTED","qty_contracts":qty})
-        elif hit_tp1:
-            try:
-                half = float(adapter.normalize_qty(asset, qty/2))
-            except Exception:
-                half = 0.0
-            if half > 0 and half < qty:
-                adapter.close_market(asset, side, half)
-                rec["tp1_taken"] = True
-                ratio = max(0.0, min(1.0, (qty-half)/qty))
-                rec["remaining_notional_usd"] = float(rec.get("remaining_notional_usd",rec.get("notional_usd",0))) * ratio
-                state[asset] = rec
-                save(state)
-                telegram_notifier.notify_partial({
-                    **rec,
-                    "exit_price":mark,
-                    "closed_qty":half,
-                    "remaining_qty":qty-half,
-                    "reason":"TAKE_PROFIT_1",
-                })
-                trade_journal.append_event({
-                    "event":"OKX_TP1",
-                    "asset":asset,
-                    "price":mark,
-                    "closed_qty_contracts":half,
-                })
-                results.append({"asset":asset,"status":"TP1_CLOSE_SUBMITTED","qty_contracts":half})
-            else:
-                results.append({"asset":asset,"status":"HELD","reason":"TP1_PARTIAL_BELOW_MIN","mark_price":mark})
+            mark = float(pos.get("markPx") or pos.get("avgPx") or 0)
+            telegram_notifier.notify_partial({
+                **rec,
+                "exit_price":mark,
+                "closed_qty":closed_qty,
+                "remaining_qty":qty,
+                "reason":"EXCHANGE_SIDE_TP1_OR_PARTIAL_REDUCTION",
+            })
+            trade_journal.append_event({
+                "event":"OKX_PARTIAL_REDUCTION",
+                "asset":asset,
+                "price":mark,
+                "closed_qty_contracts":closed_qty,
+                "remaining_qty_contracts":qty,
+            })
+            results.append({
+                "asset":asset,
+                "status":"PARTIAL_REDUCTION_DETECTED",
+                "closed_qty_contracts":closed_qty,
+                "remaining_qty_contracts":qty,
+            })
         else:
-            results.append({"asset":asset,"status":"HELD","mark_price":mark,"qty_contracts":qty})
+            rec["last_qty_contracts"] = qty
+            state[asset] = rec
+            save(state)
+            results.append({
+                "asset":asset,
+                "status":"HELD",
+                "mark_price":float(pos.get("markPx") or pos.get("avgPx") or 0),
+                "qty_contracts":qty,
+                "protection_mode":rec.get("protection_mode"),
+            })
 
-    return {"status":"OK","results":results,"ledger":demo_ledger.status()}
+    return {
+        "status":"OK",
+        "results":results,
+        "exchange_summary":exchange,
+        "ledger":demo_ledger.status(),
+    }
 
-if __name__ == "__main__":
+if __name__=="__main__":
     print(json.dumps(check_once(), ensure_ascii=False))
