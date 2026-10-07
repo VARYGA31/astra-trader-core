@@ -243,6 +243,33 @@ class OKXDemoAdapter:
             "reduceOnly": True,
         })
 
+    def fills(self, asset, ord_id=None, limit=100):
+        params = {
+            "instType": "SWAP",
+            "instId": self.inst_id(asset),
+            "limit": str(limit),
+        }
+        if ord_id:
+            params["ordId"] = str(ord_id)
+        return self.private_get("/api/v5/trade/fills", params).get("data", [])
+
+    def closed_order_result(self, asset, ord_id):
+        """Resolve a just-filled close order without depending on positions-history latency."""
+        row = self.wait_filled(asset, ord_id, timeout=15) or {}
+        exit_price = float(row.get("avgPx") or row.get("fillPx") or 0) or None
+
+        fills = self.fills(asset, ord_id=ord_id, limit=100)
+        gross_pnl = sum(float(x.get("fillPnl") or 0) for x in fills)
+        fees = sum(float(x.get("fee") or 0) for x in fills)
+        return {
+            "ordId": str(ord_id),
+            "exit_price": exit_price,
+            "gross_pnl_usd": gross_pnl,
+            "fees_usd": fees,
+            "net_pnl_usd": gross_pnl + fees,
+            "fills": len(fills),
+        }
+
     def latest_position_history(self, asset):
         data = self.private_get("/api/v5/account/positions-history", {
             "instType":"SWAP",
@@ -250,3 +277,19 @@ class OKXDemoAdapter:
             "limit":"10",
         }).get("data", [])
         return data[0] if data else None
+
+    def wait_position_history(self, asset, opened_at_ms=None, timeout=12):
+        """Wait briefly for OKX positions-history, which can lag position disappearance."""
+        deadline = time.time() + timeout
+        last = None
+        while time.time() < deadline:
+            last = self.latest_position_history(asset)
+            if last:
+                try:
+                    utime = int(last.get("uTime") or last.get("cTime") or 0)
+                except Exception:
+                    utime = 0
+                if opened_at_ms is None or utime >= int(opened_at_ms):
+                    return last
+            time.sleep(0.8)
+        return last

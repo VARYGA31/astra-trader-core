@@ -55,7 +55,14 @@ def check_once():
         pos = adapter.get_position(asset)
 
         if not pos:
-            hist = adapter.latest_position_history(asset) or {}
+            opened_at = rec.get("opened_at_utc")
+            opened_ms = None
+            if opened_at:
+                try:
+                    opened_ms = int(datetime.fromisoformat(opened_at.replace("Z","+00:00")).timestamp() * 1000)
+                except Exception:
+                    opened_ms = None
+            hist = adapter.wait_position_history(asset, opened_at_ms=opened_ms, timeout=10) or {}
             pnl = float(hist.get("realizedPnl") or 0)
             exit_px = float(hist.get("closeAvgPx") or 0) if hist.get("closeAvgPx") else None
             reason = "EXCHANGE_CLOSE"

@@ -31,4 +31,30 @@ def decide(package):
         kwargs["instructions"]=INSTRUCTIONS
         kwargs["reasoning"]={"effort":config.OPENAI_REASONING_EFFORT}
     r=client.responses.create(**kwargs)
-    return extract(r.output_text)
+    decision = extract(r.output_text)
+
+    # Normalize model output before it reaches the deterministic Risk Engine.
+    confidence = decision.get("confidence")
+    try:
+        if confidence is not None:
+            confidence = float(confidence)
+            if 0 <= confidence <= 1:
+                confidence *= 100.0
+            decision["confidence"] = max(0.0, min(100.0, confidence))
+    except Exception:
+        decision["confidence"] = 0.0
+
+    action = str(decision.get("action", "WAIT")).upper()
+    if action not in {"LONG", "SHORT", "WAIT"}:
+        action = "WAIT"
+    decision["action"] = action
+    decision["asset"] = str(decision.get("asset", package.get("asset", ""))).upper()
+    decision["timeframe"] = decision.get("timeframe") or package.get("timeframe") or config.TRADING_TIMEFRAME
+
+    if action == "WAIT":
+        decision["entry"] = None
+        decision["stop_loss"] = None
+        decision["take_profit_1"] = None
+        decision["take_profit_2"] = None
+
+    return decision

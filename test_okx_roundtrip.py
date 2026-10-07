@@ -123,7 +123,8 @@ time.sleep(8)
 
 pos = adapter.get_position(asset)
 if not pos:
-    hist = adapter.latest_position_history(asset) or {}
+    opened_ms = int(datetime.fromisoformat(record["opened_at_utc"]).timestamp() * 1000)
+    hist = adapter.wait_position_history(asset, opened_at_ms=opened_ms, timeout=12) or {}
     pnl = float(hist.get("realizedPnl") or 0)
     exit_price = float(hist.get("closeAvgPx") or 0) if hist.get("closeAvgPx") else None
     close_reason = "STOP_LOSS_OR_EXCHANGE_CLOSE_BEFORE_MANUAL_CLOSE"
@@ -132,13 +133,20 @@ else:
     close_submit = adapter.close_market(asset, side, qty)
     result["close_submit"] = close_submit
 
+    rows = close_submit.get("data", [])
+    close_order_id = rows[0].get("ordId") if rows else None
+    if not close_order_id:
+        raise RuntimeError(f"OKX_CLOSE_ORDER_ID_MISSING:{close_submit}")
+
+    resolved = adapter.closed_order_result(asset, close_order_id)
+    result["close_resolved"] = resolved
+
     deadline = time.time() + 15
     while time.time() < deadline and adapter.get_position(asset):
         time.sleep(0.8)
 
-    hist = adapter.latest_position_history(asset) or {}
-    pnl = float(hist.get("realizedPnl") or 0)
-    exit_price = float(hist.get("closeAvgPx") or 0) if hist.get("closeAvgPx") else None
+    exit_price = resolved.get("exit_price")
+    pnl = float(resolved.get("net_pnl_usd") or 0)
     close_reason = "MANUAL_ROUNDTRIP_TEST"
 
 close_record = {
