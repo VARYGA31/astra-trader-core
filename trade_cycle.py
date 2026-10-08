@@ -3,7 +3,7 @@ import sys, json
 from pathlib import Path
 from datetime import datetime, timezone
 
-import config, cooldown, decision_context, paper_execution, risk_engine
+import config, cooldown, decision_context, paper_execution, risk_engine, decision_gate
 import execution_router
 import demo_ledger
 import okx_position_monitor
@@ -62,6 +62,26 @@ def prepare(asset,hours=12):
         "guards":guards,
     }
 
+def _correlation_guard(decision, account):
+    if not config.BLOCK_BTC_ETH_SAME_DIRECTION:
+        return {"blocked":False}
+
+    asset = str(decision.get("asset","")).upper()
+    action = str(decision.get("action","")).upper()
+    if asset not in {"BTC","ETH"} or action not in {"LONG","SHORT"}:
+        return {"blocked":False}
+
+    other = "ETH" if asset == "BTC" else "BTC"
+    for p in account.get("exchange_positions", []):
+        if p.get("asset") == other and str(p.get("side","")).upper() == action:
+            return {
+                "blocked":True,
+                "reason":"BTC_ETH_SAME_DIRECTION_CORRELATION_BLOCK",
+                "other_asset":other,
+                "other_side":action,
+            }
+    return {"blocked":False}
+
 def execute(decision):
     asset = str(decision.get("asset","")).upper()
     action = str(decision.get("action","")).upper()
@@ -85,7 +105,27 @@ def execute(decision):
     if config.ONE_POSITION_PER_ASSET and g.get("asset_already_open"):
         return {"status":"REJECTED","reason":"ASSET_ALREADY_HAS_OPEN_POSITION"}
 
+    # Hard anti-chase check using fresh market data at execution time.
+    chase = decision_gate.entry_guard(p, action)
+    if chase.get("blocked"):
+        return {
+            "status":"REJECTED",
+            "reason":chase.get("reason"),
+            "stage":"entry_quality",
+            "chase_guard":chase,
+        }
+
     s = p["account_state"]
+
+    # Avoid doubling the same macro bet through BTC+ETH in the same direction.
+    corr = _correlation_guard(decision, s)
+    if corr.get("blocked"):
+        return {
+            "status":"REJECTED",
+            "reason":corr.get("reason"),
+            "stage":"portfolio_correlation",
+            "correlation_guard":corr,
+        }
     rinput = {
         **decision,
         "equity":s["equity"],

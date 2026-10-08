@@ -68,6 +68,9 @@ def active_summary():
     return OKXDemoAdapter().exchange_active_summary()
 
 def _classify_close(exit_px, rec):
+    forced = rec.get("forced_close_reason")
+    if forced:
+        return str(forced)
     if not exit_px:
         return "EXCHANGE_CLOSE"
     levels = [
@@ -129,6 +132,18 @@ def _complete_close_claim(key, message):
     processed[key] = row
     _save_processed(processed)
 
+def mark_forced_close(asset, reason, details=None):
+    d = load()
+    rec = d.get(asset)
+    if not rec:
+        return {"status":"NOT_TRACKED","asset":asset}
+    rec["forced_close_reason"] = reason
+    rec["forced_close_details"] = details or {}
+    rec["forced_close_marked_at_utc"] = now_iso()
+    d[asset] = rec
+    save(d)
+    return {"status":"OK","asset":asset,"reason":reason}
+
 def check_once():
     if config.EXECUTION_MODE != "okx_demo":
         return {"status":"SKIPPED","reason":"NOT_OKX_DEMO"}
@@ -184,7 +199,12 @@ def check_once():
             telegram_notifier.notify_close(message)
             trade_journal.append_event({"event":"OKX_POSITION_CLOSED", **message})
             demo_ledger.apply_closed_trade(pnl)
-            cooldown.set_cooldown(asset, reason=reason)
+            if reason == "STOP_LOSS":
+                cooldown.set_cooldown(asset, seconds=config.STOP_LOSS_COOLDOWN_SECONDS, reason=reason)
+            elif str(reason).startswith("EMERGENCY_"):
+                cooldown.set_cooldown(asset, seconds=config.EMERGENCY_EXIT_COOLDOWN_SECONDS, reason=reason)
+            else:
+                cooldown.set_cooldown(asset, reason=reason)
             _complete_close_claim(close_key, message)
 
             results.append({

@@ -349,6 +349,7 @@ class OKXDemoAdapter:
             details.append({
                 "asset":asset,
                 "instId":p.get("instId"),
+                "side":"LONG" if qty > 0 else "SHORT",
                 "qty_contracts":abs(qty),
                 "notional_usd":notion,
                 "avgPx":p.get("avgPx"),
