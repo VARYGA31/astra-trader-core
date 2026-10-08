@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 import html
+import json
+from pathlib import Path
+from datetime import datetime, timezone
 import requests
 import config
 
 API = "https://api.telegram.org"
+DEDUPE = Path(config.STATE_DIR) / "telegram_event_dedupe.json"
 
 def _fmt_num(v, digits=8):
     if v is None:
@@ -14,6 +18,27 @@ def _fmt_num(v, digits=8):
         return s
     except Exception:
         return str(v)
+
+def _load_dedupe():
+    try:
+        return json.loads(DEDUPE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+def _claim_event(event_id):
+    if not event_id:
+        return True
+    d = _load_dedupe()
+    if event_id in d:
+        return False
+    d[event_id] = datetime.now(timezone.utc).isoformat()
+    if len(d) > 2000:
+        d = dict(list(d.items())[-2000:])
+    DEDUPE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = DEDUPE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(DEDUPE)
+    return True
 
 def send_text(text):
     if not config.TELEGRAM_ENABLED:
@@ -54,6 +79,9 @@ def notify_open(trade):
     return send_text(text)
 
 def notify_partial(trade):
+    event_id = trade.get("partial_event_id")
+    if event_id and not _claim_event("PARTIAL:"+str(event_id)):
+        return {"status":"DUPLICATE_SUPPRESSED"}
     text = (
         f"🟡 <b>ASTRA — ЧАСТИЧНОЕ ЗАКРЫТИЕ</b>\n\n"
         f"Монета: <b>{html.escape(str(trade.get('asset','—')))}</b>\n"
@@ -65,6 +93,10 @@ def notify_partial(trade):
     return send_text(text)
 
 def notify_close(trade):
+    event_id = trade.get("close_event_id") or f"{trade.get('asset')}:{trade.get('order_id')}"
+    if event_id and not _claim_event("CLOSE:"+str(event_id)):
+        return {"status":"DUPLICATE_SUPPRESSED"}
+
     pnl = trade.get("pnl_usd")
     pnl_icon = "✅" if (pnl is not None and float(pnl) >= 0) else "❌"
     text = (
