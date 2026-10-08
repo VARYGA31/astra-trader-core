@@ -46,3 +46,5 @@ MIN_TP1_R = float(os.getenv("MIN_TP1_R", "1.0"))
 MIN_TP2_R = float(os.getenv("MIN_TP2_R", "1.8"))
 ONE_POSITION_PER_ASSET = os.getenv("ONE_POSITION_PER_ASSET", "true").lower() == "true"
 EXCHANGE_SIDE_TP_SL = os.getenv("EXCHANGE_SIDE_TP_SL", "true").lower() == "true"
+
+MOVE_SL_TO_BREAKEVEN_AFTER_TP1 = os.getenv("MOVE_SL_TO_BREAKEVEN_AFTER_TP1", "true").lower() == "true"

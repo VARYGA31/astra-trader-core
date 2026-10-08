@@ -217,12 +217,16 @@ class OKXDemoAdapter:
                     "slTriggerPx": str(stop_loss),
                     "slTriggerPxType": "mark",
                     "slOrdPx": "-1",
+                    # OKX native Cost-price SL for split TPs:
+                    # after the first TP triggers, OKX moves SL trigger to avgPx.
+                    "amendPxOnTriggerType": "1" if config.MOVE_SL_TO_BREAKEVEN_AFTER_TP1 else "0",
                 },
             ]
             return algos, {
                 "mode":"SPLIT_TP1_TP2_PLUS_SL",
                 "tp1_qty_contracts":float(half),
                 "tp2_qty_contracts":float(rest),
+                "breakeven_after_tp1":bool(config.MOVE_SL_TO_BREAKEVEN_AFTER_TP1),
             }
 
         # Small position: OKX cannot split below minSz, so protect the whole

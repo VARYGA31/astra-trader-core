@@ -1,38 +1,20 @@
-ASTRA CLOSE-SPAM HOTFIX
+ASTRA LEDGER REPAIR
 
-IMMEDIATE:
+Use because duplicate close notifications inflated the synthetic ledger.
+
 1) Railway Variables:
    AUTO_DECISION=false
-   TELEGRAM_ENABLED=false
-2) Redeploy. This stops the Telegram flood while exchange-side TP/SL remains on OKX.
-
-INSTALL:
-Replace:
-- okx_position_monitor.py
-- telegram_notifier.py
-Add:
-- fix_close_spam_state.py
-
-Temporary Start Command:
-python fix_close_spam_state.py && python worker.py
-
-Keep:
-AUTO_DECISION=false
-TELEGRAM_ENABLED=false
-
-Expected cleanup status: OK.
-The cleanup removes only stale local records for assets already closed on OKX.
-It does not touch any open exchange position and does not alter demo ledger.
-
-AFTER CLEANUP:
-1) Return Start Command: python worker.py
-2) Redeploy.
-3) Set TELEGRAM_ENABLED=true
-4) Keep AUTO_DECISION=false.
-5) Open /health and send it for ledger verification before re-enabling autonomous trading.
-
-The hotfix makes close processing idempotent:
-- confirms position is absent 3 times;
-- claims close event persistently;
-- removes active record BEFORE Telegram/ledger side effects;
-- suppresses duplicate close/partial Telegram events.
+2) Keep worker/OKX running; existing exchange-side TP/SL remain on OKX.
+3) Upload repair_demo_ledger.py and print_risk_config.py to repo root.
+4) Temporary Start Command:
+   python repair_demo_ledger.py && python print_risk_config.py && python worker.py
+5) Redeploy.
+6) Verify:
+   ledger_after.initial_equity = 5000
+   ledger_after.equity = 5000
+   realized_pnl = 0
+   closed_trades = 0
+   and existing exchange positions are unchanged.
+7) Return Start Command:
+   python worker.py
+8) Keep AUTO_DECISION=false until /health is reviewed.
