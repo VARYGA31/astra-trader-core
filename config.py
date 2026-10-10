@@ -70,3 +70,31 @@ EMERGENCY_MARKET_IMMEDIATE_SCORE = int(os.getenv("EMERGENCY_MARKET_IMMEDIATE_SCO
 EMERGENCY_MARKET_CONFIRMATIONS = int(os.getenv("EMERGENCY_MARKET_CONFIRMATIONS", "2"))
 EMERGENCY_NEWS_MAX_AGE_MINUTES = int(os.getenv("EMERGENCY_NEWS_MAX_AGE_MINUTES", "30"))
 EMERGENCY_NEWS_MIN_CONFIDENCE = float(os.getenv("EMERGENCY_NEWS_MIN_CONFIDENCE", "80"))
+
+# ===== ASTRA MTF v2 =====
+# 4H regime -> 1H setup -> 15M trigger
+MTF_ENABLED = os.getenv("MTF_ENABLED", "true").lower() == "true"
+MTF_MIN_QUALITY = float(os.getenv("MTF_MIN_QUALITY", "72"))
+MTF_TRIGGER_MIN_COMPONENTS = int(os.getenv("MTF_TRIGGER_MIN_COMPONENTS", "3"))
+ENTRY_DRIFT_MAX_PCT = float(os.getenv("ENTRY_DRIFT_MAX_PCT", "0.25"))
+
+# Minimum model confidence. Confidence is NOT win probability.
+MIN_TRADE_CONFIDENCE = float(os.getenv("MIN_TRADE_CONFIDENCE", "80"))
+
+# Confidence/quality based risk tiers.
+# Deterministic Risk Engine chooses the actual risk; ASTRA never sizes a trade.
+RISK_PCT_80_84 = float(os.getenv("RISK_PCT_80_84", "0.0035"))
+RISK_PCT_85_91 = float(os.getenv("RISK_PCT_85_91", "0.0050"))
+RISK_PCT_92_PLUS = float(os.getenv("RISK_PCT_92_PLUS", "0.0075"))
+
+# Dynamic leverage is technical/margin leverage only; max stays 5x.
+LEVERAGE_HIGH_VOL = float(os.getenv("LEVERAGE_HIGH_VOL", "2"))
+LEVERAGE_NORMAL = float(os.getenv("LEVERAGE_NORMAL", "3"))
+LEVERAGE_BEST_SETUP = float(os.getenv("LEVERAGE_BEST_SETUP", "5"))
+BEST_SETUP_MIN_QUALITY = float(os.getenv("BEST_SETUP_MIN_QUALITY", "90"))
+BEST_SETUP_MIN_CONFIDENCE = float(os.getenv("BEST_SETUP_MIN_CONFIDENCE", "92"))
+BEST_SETUP_MAX_STOP_PCT = float(os.getenv("BEST_SETUP_MAX_STOP_PCT", "1.50"))
+
+# Pause new entries after a losing streak.
+LOSS_STREAK_LIMIT = int(os.getenv("LOSS_STREAK_LIMIT", "3"))
+LOSS_STREAK_PAUSE_SECONDS = int(os.getenv("LOSS_STREAK_PAUSE_SECONDS", "21600"))

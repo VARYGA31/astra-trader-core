@@ -49,6 +49,7 @@ def prepare(asset,hours=12):
         **c.get("guards",{}),
         "market_stale":age > config.STALE_MARKET_SECONDS,
         "cooldown":cooldown.status(asset),
+        "loss_streak_pause":performance_guard.status(),
         "trading_halted":s.get("trading_halted",False),
         "asset_already_open":asset in set(s.get("open_assets",[])),
     }
@@ -100,12 +101,31 @@ def execute(decision):
         return {"status":"REJECTED","reason":"UNVERIFIED_HIGH_IMPACT_NEWS"}
     if g.get("cooldown",{}).get("active"):
         return {"status":"REJECTED","reason":"COOLDOWN_ACTIVE"}
+    if g.get("loss_streak_pause",{}).get("active"):
+        return {"status":"REJECTED","reason":"LOSS_STREAK_PAUSE","guard":g.get("loss_streak_pause")}
     if g.get("trading_halted"):
         return {"status":"REJECTED","reason":"TRADING_HALTED"}
     if config.ONE_POSITION_PER_ASSET and g.get("asset_already_open"):
         return {"status":"REJECTED","reason":"ASSET_ALREADY_HAS_OPEN_POSITION"}
 
-    # Hard anti-chase check using fresh market data at execution time.
+    # Re-check 4H -> 1H -> 15M alignment using FRESH data immediately before execution.
+    mtf = mtf_gate.evaluate(p)
+    if not mtf.get("passed"):
+        return {
+            "status":"REJECTED",
+            "reason":"MTF_NOT_ALIGNED_AT_EXECUTION",
+            "stage":"entry_quality",
+            "mtf":mtf,
+        }
+    if mtf.get("direction") != action:
+        return {
+            "status":"REJECTED",
+            "reason":"ASTRA_DIRECTION_DISAGREES_WITH_MTF",
+            "stage":"entry_quality",
+            "mtf":mtf,
+            "astra_action":action,
+        }
+
     chase = decision_gate.entry_guard(p, action)
     if chase.get("blocked"):
         return {
@@ -115,7 +135,71 @@ def execute(decision):
             "chase_guard":chase,
         }
 
+    # We execute MARKET orders. Reject if ASTRA's planned entry drifted too far,
+    # then recalc risk/R:R from the current market reference price.
+    current_price=p.get("decision_context",{}).get("market",{}).get("spot",{}).get("price")
+    try:
+        planned=float(decision.get("entry"))
+        current=float(current_price)
+        drift=abs(current-planned)/current*100
+    except Exception:
+        return {"status":"REJECTED","reason":"ENTRY_PRICE_UNAVAILABLE"}
+
+    if drift>config.ENTRY_DRIFT_MAX_PCT:
+        return {
+            "status":"REJECTED",
+            "reason":"ENTRY_PRICE_DRIFT",
+            "drift_pct":drift,
+            "maximum_pct":config.ENTRY_DRIFT_MAX_PCT,
+            "planned_entry":planned,
+            "current_price":current,
+        }
+
+    decision["planned_entry"]=planned
+    decision["entry"]=current
+    decision["mtf_quality"]=mtf.get("quality")
+    decision["mtf_gate"]=mtf
+
     s = p["account_state"]
+
+    # Freeze a compact forensic snapshot at the exact execution check.
+    # This is journaled with the trade and is intentionally compact.
+    dc = p.get("decision_context", {})
+    market = dc.get("market", {})
+    spot = market.get("spot", {})
+    perp = market.get("perp_okx", {})
+    news = dc.get("news", {})
+    decision["execution_context"] = {
+        "captured_at_utc":datetime.now(timezone.utc).isoformat(),
+        "spot":{
+            "price":spot.get("price"),
+            "ticker_24h":spot.get("ticker_24h"),
+            "indicators":spot.get("indicators"),
+            "regimes":spot.get("regimes"),
+            "changes_pct":spot.get("changes_pct"),
+            "order_book":spot.get("order_book"),
+            "trade_flow":spot.get("trade_flow"),
+        },
+        "perp_okx":{
+            "funding_rate":perp.get("funding_rate"),
+            "open_interest":perp.get("open_interest"),
+        },
+        "news":{
+            "summary":news.get("summary"),
+            "guard":news.get("guard"),
+        },
+        "account_state":{
+            "equity":s.get("equity"),
+            "open_positions":s.get("open_positions"),
+            "current_exposure_usd":s.get("current_exposure_usd"),
+            "open_assets":s.get("open_assets"),
+        },
+        "entry_quality_guard":chase,
+        "mtf_gate":mtf,
+        "planned_entry":planned,
+        "execution_entry_reference":current,
+        "entry_drift_pct":drift,
+    }
 
     # Avoid doubling the same macro bet through BTC+ETH in the same direction.
     corr = _correlation_guard(decision, s)

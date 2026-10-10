@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 
 import config
 import telegram_notifier
+import trade_journal
+import demo_ledger
 from okx_demo_adapter import OKXDemoAdapter
 import okx_position_monitor
 
@@ -16,9 +18,46 @@ def open_trade(decision, risk):
     adapter = OKXDemoAdapter()
     asset = decision["asset"]
 
-    # Final exchange-side duplicate-position guard.
-    if config.ONE_POSITION_PER_ASSET and adapter.get_position(asset):
+    # FINAL exchange-side portfolio guard immediately before order submission.
+    # OKX is the source of truth here; this prevents stale/raced account snapshots
+    # from creating a 3rd position or exceeding the global exposure cap.
+    summary = adapter.exchange_active_summary()
+
+    if config.ONE_POSITION_PER_ASSET and asset in set(summary.get("assets", [])):
         return {"status":"REJECTED","reason":"ASSET_ALREADY_HAS_OPEN_POSITION_EXCHANGE"}
+
+    if int(summary.get("open_positions", 0)) >= config.MAX_OPEN_POSITIONS:
+        return {
+            "status":"REJECTED",
+            "reason":"MAX_OPEN_POSITIONS_EXCHANGE_GUARD",
+            "exchange_summary":summary,
+        }
+
+    # Final BTC/ETH same-direction correlation guard.
+    if config.BLOCK_BTC_ETH_SAME_DIRECTION and asset in {"BTC","ETH"}:
+        other = "ETH" if asset == "BTC" else "BTC"
+        for p in summary.get("details", []):
+            if p.get("asset") == other and str(p.get("side","")).upper() == str(decision.get("action","")).upper():
+                return {
+                    "status":"REJECTED",
+                    "reason":"BTC_ETH_SAME_DIRECTION_EXCHANGE_GUARD",
+                    "other_position":p,
+                }
+
+    ledger = demo_ledger.status()
+    equity = float(ledger.get("equity") or config.INITIAL_EQUITY)
+    exposure_now = float(summary.get("current_exposure_usd", 0))
+    proposed = float(risk.get("position_notional_usd", 0))
+    exposure_cap = equity * config.MAX_TOTAL_EXPOSURE_PCT
+
+    if exposure_now + proposed > exposure_cap + 1e-9:
+        return {
+            "status":"REJECTED",
+            "reason":"MAX_TOTAL_EXPOSURE_EXCHANGE_GUARD",
+            "current_exposure_usd":exposure_now,
+            "proposed_notional_usd":proposed,
+            "exposure_cap_usd":exposure_cap,
+        }
 
     opened = adapter.open_market(
         asset,
@@ -58,9 +97,22 @@ def open_trade(decision, risk):
         "tp1_qty_contracts":protection.get("tp1_qty_contracts"),
         "tp2_qty_contracts":protection.get("tp2_qty_contracts"),
         "mode":"OKX DEMO",
+        # Persist the actual decision/audit data so future losses can be diagnosed
+        # even after /health has been overwritten by newer decisions.
+        "confidence":decision.get("confidence"),
+        "decision_reason":decision.get("reason"),
+        "data_quality":decision.get("data_quality"),
+        "volatility_regime":decision.get("volatility_regime"),
+        "gate":decision.get("gate"),
+        "setup_type":decision.get("setup_type"),
+        "mtf_quality":risk.get("mtf_quality"),
+        "trade_quality":risk.get("trade_quality"),
+        "risk_pct_budget":risk.get("risk_pct_budget"),
+        "execution_context":decision.get("execution_context"),
     }
 
     okx_position_monitor.register_trade(record)
+    trade_journal.append_event({"event":"OKX_POSITION_OPENED", **record})
     telegram_notifier.notify_open(record)
     return {
         "status":"OKX_DEMO_OPENED",

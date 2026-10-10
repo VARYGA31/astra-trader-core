@@ -162,76 +162,76 @@ def entry_guard(package, action):
     spot = package.get("decision_context", {}).get("market", {}).get("spot", {})
     return chase_guard_from_spot(spot, action)
 
-def _market_score(package):
-    spot = package.get("decision_context", {}).get("market", {}).get("spot", {})
-    score, reasons = score_spot(spot)
-    return score, reasons, spot.get("last_candle_close_time_ms")
-
 def _verified_event(package):
     for e in package.get("decision_context", {}).get("news", {}).get("events", []):
-        if e.get("impact_hint") == "HIGH" and e.get("trade_usable"):
+        if e.get("impact_hint")=="HIGH" and e.get("trade_usable"):
             return e.get("id")
     return None
 
 def evaluate(package, force_event=False):
-    g = package.get("guards", {})
+    import mtf_gate
+
+    g=package.get("guards",{})
     if (
         g.get("market_stale")
         or not g.get("market_ok")
         or not g.get("news_ok")
         or not g.get("critical_news_verified")
         or g.get("trading_halted")
-        or g.get("cooldown", {}).get("active")
+        or g.get("cooldown",{}).get("active")
+        or g.get("loss_streak_pause",{}).get("active")
     ):
-        return {"call_model": False, "reason": "GUARD_BLOCK"}
+        return {"call_model":False,"reason":"GUARD_BLOCK","guards":g}
 
-    if int(package.get("account_state", {}).get("open_positions", 0)) >= config.MAX_OPEN_POSITIONS:
-        return {"call_model": False, "reason": "MAX_OPEN_POSITIONS"}
+    if int(package.get("account_state",{}).get("open_positions",0))>=config.MAX_OPEN_POSITIONS:
+        return {"call_model":False,"reason":"MAX_OPEN_POSITIONS"}
 
-    score, reasons, candle = _market_score(package)
-
-    # Save OpenAI credits and prevent late trend-chasing.
-    candidate = "LONG" if score >= config.MODEL_GATE_MIN_SCORE else "SHORT" if score <= -config.MODEL_GATE_MIN_SCORE else None
-    chase = entry_guard(package, candidate) if candidate else {"blocked": False}
-    if chase.get("blocked"):
+    mtf=mtf_gate.evaluate(package)
+    if not mtf.get("passed"):
         return {
-            "call_model": False,
-            "reason": chase["reason"],
-            "score": score,
-            "score_reasons": reasons,
-            "chase_guard": chase,
+            "call_model":False,
+            "reason":mtf.get("reason","MTF_NOT_ALIGNED"),
+            "mtf":mtf,
         }
 
-    ev = _verified_event(package)
-    st = _load()
-    old = st.get(package.get("asset", ""), {})
-    new_candle = candle is not None and candle != old.get("last_candle_close_time_ms")
-    new_event = ev is not None and ev != old.get("last_verified_event_id")
+    # Existing anti-chase guard remains as another layer.
+    chase=entry_guard(package,mtf.get("direction"))
+    if chase.get("blocked"):
+        return {
+            "call_model":False,
+            "reason":chase.get("reason"),
+            "mtf":mtf,
+            "chase_guard":chase,
+        }
 
-    call = bool(
-        (new_candle and abs(score) >= config.MODEL_GATE_MIN_SCORE)
-        or new_event
-        or (force_event and ev)
-    )
-    reason = "MODEL_GATE_PASS" if call else (
-        "SAME_CANDLE" if not new_candle and not new_event else "NO_STRONG_SETUP"
-    )
+    ev=_verified_event(package)
+    st=_load()
+    asset=package.get("asset","")
+    old=st.get(asset,{})
+    candle=mtf.get("trigger_candle_id")
+    new_trigger=candle is not None and candle!=old.get("last_trigger_candle_id")
+    new_event=ev is not None and ev!=old.get("last_verified_event_id")
+
+    call=bool(new_trigger or (force_event and new_event))
+    reason="MODEL_GATE_PASS" if call else "SAME_15M_TRIGGER"
 
     if call:
-        st[package.get("asset", "")] = {
-            "last_candle_close_time_ms": candle,
-            "last_verified_event_id": ev,
-            "last_gate_score": score,
-            "last_called_at_utc": datetime.now(timezone.utc).isoformat(),
+        st[asset]={
+            "last_trigger_candle_id":candle,
+            "last_verified_event_id":ev,
+            "last_mtf_direction":mtf.get("direction"),
+            "last_mtf_quality":mtf.get("quality"),
+            "last_called_at_utc":datetime.now(timezone.utc).isoformat(),
         }
         _save(st)
 
     return {
-        "call_model": call,
-        "reason": reason,
-        "score": score,
-        "score_reasons": reasons,
-        "new_candle": new_candle,
-        "new_verified_high_event": new_event,
-        "chase_guard": chase,
+        "call_model":call,
+        "reason":reason,
+        "allowed_direction":mtf.get("direction"),
+        "mtf_quality":mtf.get("quality"),
+        "new_trigger_candle":new_trigger,
+        "new_verified_high_event":new_event,
+        "mtf":mtf,
+        "chase_guard":chase,
     }
