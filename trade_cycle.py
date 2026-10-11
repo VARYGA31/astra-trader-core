@@ -3,7 +3,7 @@ import sys, json
 from pathlib import Path
 from datetime import datetime, timezone
 
-import config, cooldown, decision_context, paper_execution, risk_engine, decision_gate
+import config, cooldown, decision_context, paper_execution, risk_engine, decision_gate, mtf_gate, performance_guard
 import execution_router
 import demo_ledger
 import okx_position_monitor
