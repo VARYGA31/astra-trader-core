@@ -1,10 +1,22 @@
-HOTFIX: trade_cycle.py was using mtf_gate and performance_guard without importing them.
+ASTRA XAU Treasury hotfix
 
-1) Railway: AUTO_DECISION=false
-2) Replace trade_cycle.py in the repository root with this file.
+The first XAU preflight proved that XAU-USDT-SWAP is live and MTF data works.
+The only broken part was the old Treasury XML URL.
+
+This hotfix changes gold_macro.py to the official documented Treasury XML endpoint:
+  /resource-center/data-chart-center/interest-rates/pages/xml
+
+It requests the current month first and falls back to the current year.
+It also parses Atom/OData namespaces robustly.
+
+SAFE TEST
+1) Keep AUTO_DECISION=false
+2) Replace gold_macro.py
 3) Temporary Start Command:
-   python -c "import trade_cycle, mtf_gate, performance_guard; print('RUNTIME_IMPORTS_OK')" && python worker.py
-4) Redeploy and verify RUNTIME_IMPORTS_OK.
-5) Return Start Command to: python worker.py
-6) Open /health. status should be ok and last_error should be null.
-7) Only then set AUTO_DECISION=true.
+   python test_treasury_parser.py && python gold_macro.py && python test_xau_support.py && python worker.py
+4) Redeploy
+5) Expected:
+   TREASURY_PARSER_OK
+   treasury_yields.status = OK
+   market.data_quality.status = OK
+6) Keep AUTO_DECISION=false and send the log before enabling XAU.
