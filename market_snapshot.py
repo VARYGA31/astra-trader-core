@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import requests
 
 from asset_map import ASSETS
+import gold_macro
 
 BINANCE = "https://data-api.binance.vision"
 OKX = "https://www.okx.com"
@@ -227,6 +228,88 @@ def spot_binance(symbol):
         "last_candle_close_time_ms":int(kl[-1][6]) if kl else None,
     }
 
+def okx_reference_market(inst):
+    """Spot-like technical context built from the OKX swap itself.
+
+    Used for XAU because XAU-USDT-SWAP is the tradable commodity perpetual
+    while a matching crypto-style spot market is not assumed.
+    """
+    tick,_=get(OKX+"/api/v5/market/ticker",{"instId":inst})
+    td=tick.get("data",[])
+    if not td:
+        raise RuntimeError("OKX_REFERENCE_TICKER_EMPTY")
+    td=td[0]
+
+    rows=_okx_confirmed_candles(inst,"1H",300)
+    if len(rows)<30:
+        raise RuntimeError("OKX_REFERENCE_CANDLES_INSUFFICIENT")
+
+    opens=[x["open"] for x in rows]
+    highs=[x["high"] for x in rows]
+    lows=[x["low"] for x in rows]
+    closes=[x["close"] for x in rows]
+    vols=[x["volume"] for x in rows]
+    price=float(td.get("last") or closes[-1])
+
+    e20,e50,e200=ema(closes,20),ema(closes,50),ema(closes,200)
+    rr=rsi(closes,14)
+    aa=atr(highs,lows,closes,14)
+
+    depth,_=get(OKX+"/api/v5/market/books",{"instId":inst,"sz":"20"})
+    book=(depth.get("data") or [{}])[0]
+    bids=sum(float(x[0])*float(x[1]) for x in book.get("bids",[]))
+    asks=sum(float(x[0])*float(x[1]) for x in book.get("asks",[]))
+    imbalance=(bids-asks)/(bids+asks) if bids+asks else None
+
+    trades,_=get(OKX+"/api/v5/market/trades",{"instId":inst,"limit":"500"})
+    buy=sell=0.0
+    for t in trades.get("data",[]):
+        try:
+            notional=float(t["px"])*float(t["sz"])
+            if str(t.get("side","")).lower()=="buy":
+                buy+=notional
+            else:
+                sell+=notional
+        except Exception:
+            continue
+
+    return {
+        "price":price,
+        "ticker_24h":{
+            "high":float(td["high24h"]) if td.get("high24h") else None,
+            "low":float(td["low24h"]) if td.get("low24h") else None,
+            "volume_base":float(td["vol24h"]) if td.get("vol24h") else None,
+            "volume_quote":float(td["volCcy24h"]) if td.get("volCcy24h") else None,
+        },
+        "changes_pct":{
+            "1h":pct(closes[-1],closes[-2]) if len(closes)>=2 else None,
+            "4h":pct(closes[-1],closes[-5]) if len(closes)>=5 else None,
+            "24h":pct(closes[-1],closes[-25]) if len(closes)>=25 else None,
+        },
+        "indicators":{
+            "ema20":e20,"ema50":e50,"ema200":e200,
+            "rsi14":rr,"atr14":aa,
+            "atr_pct":(aa/price*100 if aa else None),
+            "realized_vol_24h_pct":None,
+        },
+        "regimes":{
+            "trend":regime(price,e20,e50,e200),
+            "momentum":"BULLISH" if (rr or 50)>55 else "BEARISH" if (rr or 50)<45 else "NEUTRAL",
+            "structure":_structure(highs,lows),
+        },
+        "order_book":{
+            "bid_notional_top20":bids,
+            "ask_notional_top20":asks,
+            "imbalance":imbalance,
+        },
+        "trade_flow":{
+            "aggressive_buy_usd":buy,
+            "aggressive_sell_usd":sell,
+            "buy_sell_ratio":buy/sell if sell else None,
+        },
+        "last_candle_close_time_ms":rows[-1]["close_time_ms"],
+    }
+
 def okx_swap(inst):
     out={}
     try:
@@ -254,23 +337,35 @@ def snapshot(asset):
     cfg=ASSETS[asset]
     errors=[]
     spot=None
-    source="binance"
 
-    try:
-        spot=spot_binance(cfg["binance_spot"])
-    except Exception as e:
-        errors.append("binance:"+str(e))
-        source="okx_fallback"
+    if asset=="XAU":
+        source="okx_xau_swap_reference"
         try:
-            spot={"price":okx_spot_price(cfg["okx_spot"])}
-        except Exception as e2:
-            errors.append("okx_spot:"+str(e2))
+            spot=okx_reference_market(cfg["okx_swap"])
+        except Exception as e:
+            errors.append("okx_xau_reference:"+str(e))
+    else:
+        source="binance"
+        try:
+            spot=spot_binance(cfg["binance_spot"])
+        except Exception as e:
+            errors.append("binance:"+str(e))
+            source="okx_fallback"
+            try:
+                if cfg.get("okx_spot"):
+                    spot={"price":okx_spot_price(cfg["okx_spot"])}
+            except Exception as e2:
+                errors.append("okx_spot:"+str(e2))
 
     perp=okx_swap(cfg["okx_swap"])
     mtf=okx_multi_timeframe(cfg["okx_swap"])
+    gmacro=gold_macro.snapshot() if asset=="XAU" else None
 
     quality="OK" if spot and spot.get("price") and mtf.get("status")!="FAILED" else "FAILED"
     if quality=="OK" and (errors or mtf.get("status")=="PARTIAL"):
+        quality="PARTIAL"
+
+    if asset=="XAU" and gmacro and gmacro.get("status")=="PARTIAL" and quality=="OK":
         quality="PARTIAL"
 
     return {
@@ -281,6 +376,7 @@ def snapshot(asset):
         "spot":spot or {},
         "multi_timeframe":mtf,
         "perp_okx":perp,
+        "gold_macro":gmacro,
         "liquidations":{"status":"UNAVAILABLE","note":"No complete free liquidation feed configured; never infer missing data."},
         "data_quality":{"status":quality,"errors":errors + mtf.get("errors",[])},
     }

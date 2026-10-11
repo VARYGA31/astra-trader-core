@@ -168,6 +168,21 @@ def _verified_event(package):
             return e.get("id")
     return None
 
+def _new_verified_high_event_obj(package):
+    events=package.get("decision_context",{}).get("news",{}).get("events",[])
+    for e in events:
+        if e.get("impact_hint")=="HIGH" and e.get("trade_usable"):
+            return e
+    return None
+
+def _event_age_minutes(e):
+    if not e:return None
+    try:
+        dt=datetime.fromisoformat((e.get("published_at_utc") or "").replace("Z","+00:00"))
+        return (datetime.now(timezone.utc)-dt).total_seconds()/60.0
+    except Exception:
+        return None
+
 def evaluate(package, force_event=False):
     import mtf_gate
 
@@ -180,6 +195,9 @@ def evaluate(package, force_event=False):
         or g.get("trading_halted")
         or g.get("cooldown",{}).get("active")
         or g.get("loss_streak_pause",{}).get("active")
+        or (package.get("asset")=="XAU" and not g.get("xau_session_ok",False))
+        or (package.get("asset")=="XAU" and not g.get("gold_macro_ok",False))
+        or (package.get("asset")=="XAU" and not g.get("gold_macro_primary_ok",False))
     ):
         return {"call_model":False,"reason":"GUARD_BLOCK","guards":g}
 
@@ -193,6 +211,21 @@ def evaluate(package, force_event=False):
             "reason":mtf.get("reason","MTF_NOT_ALIGNED"),
             "mtf":mtf,
         }
+
+    # For gold, do not enter in the first few minutes after a fresh verified
+    # high-impact macro headline. Wait for price discovery / 15m confirmation.
+    if package.get("asset")=="XAU":
+        ev_obj=_new_verified_high_event_obj(package)
+        age=_event_age_minutes(ev_obj)
+        if age is not None and age < config.XAU_NEWS_SETTLE_MINUTES:
+            return {
+                "call_model":False,
+                "reason":"XAU_MACRO_NEWS_SETTLE",
+                "news_age_minutes":age,
+                "settle_minutes":config.XAU_NEWS_SETTLE_MINUTES,
+                "event":{k:ev_obj.get(k) for k in ("id","source","title","event_type","impact_hint")},
+                "mtf":mtf,
+            }
 
     # Existing anti-chase guard remains as another layer.
     chase=entry_guard(package,mtf.get("direction"))

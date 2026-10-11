@@ -24,12 +24,29 @@ def _risk_pct(confidence,mtf_quality,dd_mult):
         base=config.RISK_PCT_92_PLUS
     return min(base*dd_mult,config.HARD_RISK_PCT),quality
 
-def _leverage(volatility,quality,stop_dist_pct):
+def _leverage(asset, volatility, quality, confidence, stop_dist_pct):
     v=str(volatility or "NORMAL").upper()
+
+    if asset=="XAU":
+        # User-requested 5x..10x range for gold only.
+        # Higher leverage does NOT enlarge the stop-risk budget.
+        if v in {"ELEVATED","HIGH","EXTREME"}:
+            lev=config.XAU_MIN_LEVERAGE
+        elif (
+            quality>=config.XAU_BEST_SETUP_MIN_QUALITY
+            and confidence>=config.XAU_BEST_SETUP_MIN_CONFIDENCE
+            and stop_dist_pct*100<=config.XAU_BEST_SETUP_MAX_STOP_PCT
+        ):
+            lev=config.XAU_MAX_LEVERAGE
+        else:
+            lev=config.XAU_NORMAL_LEVERAGE
+        return min(max(float(lev),config.XAU_MIN_LEVERAGE),config.XAU_MAX_LEVERAGE)
+
     if v in {"ELEVATED","HIGH","EXTREME"}:
         lev=config.LEVERAGE_HIGH_VOL
     elif (
         quality>=config.BEST_SETUP_MIN_QUALITY
+        and confidence>=config.BEST_SETUP_MIN_CONFIDENCE
         and stop_dist_pct*100<=config.BEST_SETUP_MAX_STOP_PCT
     ):
         lev=config.LEVERAGE_BEST_SETUP
@@ -53,10 +70,12 @@ def evaluate(d):
 
     confidence=float(d.get("confidence",0) or 0)
     mtf_quality=float(d.get("mtf_quality",0) or 0)
-    if confidence<config.MIN_TRADE_CONFIDENCE:
-        return reject("CONFIDENCE_TOO_LOW",{"confidence":confidence,"minimum":config.MIN_TRADE_CONFIDENCE})
-    if mtf_quality<config.MTF_MIN_QUALITY:
-        return reject("MTF_QUALITY_TOO_LOW",{"mtf_quality":mtf_quality,"minimum":config.MTF_MIN_QUALITY})
+    min_conf=config.XAU_MIN_TRADE_CONFIDENCE if asset=="XAU" else config.MIN_TRADE_CONFIDENCE
+    min_mtf=config.XAU_MTF_MIN_QUALITY if asset=="XAU" else config.MTF_MIN_QUALITY
+    if confidence<min_conf:
+        return reject("CONFIDENCE_TOO_LOW",{"confidence":confidence,"minimum":min_conf})
+    if mtf_quality<min_mtf:
+        return reject("MTF_QUALITY_TOO_LOW",{"mtf_quality":mtf_quality,"minimum":min_mtf})
 
     entry=float(d["entry"]); stop=float(d["stop_loss"])
     tp1=float(d["take_profit_1"]); tp2=float(d["take_profit_2"])
@@ -95,7 +114,7 @@ def evaluate(d):
         return reject("TRADE_QUALITY_TOO_LOW",{"quality":quality})
 
     risk_usd=eq*risk_pct
-    leverage=_leverage(d.get("volatility_regime"),quality,stop_dist_pct)
+    leverage=_leverage(asset,d.get("volatility_regime"),quality,confidence,stop_dist_pct)
 
     # Notional is always risk-budgeted. Higher leverage does NOT increase risk budget.
     notional=min(

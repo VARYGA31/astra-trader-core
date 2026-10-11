@@ -99,6 +99,13 @@ def execute(decision):
         return {"status":"REJECTED","reason":"NEWS_DATA_GUARD"}
     if not g.get("critical_news_verified"):
         return {"status":"REJECTED","reason":"UNVERIFIED_HIGH_IMPACT_NEWS"}
+    if asset=="XAU":
+        if not g.get("xau_session_ok",False):
+            return {"status":"REJECTED","reason":"XAU_WEEKEND_BLOCK"}
+        if not g.get("gold_macro_ok",False):
+            return {"status":"REJECTED","reason":"XAU_GOLD_MACRO_DATA_GUARD"}
+        if not g.get("gold_macro_primary_ok",False):
+            return {"status":"REJECTED","reason":"XAU_PRIMARY_MACRO_NEWS_GUARD"}
     if g.get("cooldown",{}).get("active"):
         return {"status":"REJECTED","reason":"COOLDOWN_ACTIVE"}
     if g.get("loss_streak_pause",{}).get("active"):
@@ -184,6 +191,7 @@ def execute(decision):
             "funding_rate":perp.get("funding_rate"),
             "open_interest":perp.get("open_interest"),
         },
+        "gold_macro":market.get("gold_macro") if asset=="XAU" else None,
         "news":{
             "summary":news.get("summary"),
             "guard":news.get("guard"),

@@ -1,80 +1,62 @@
-ASTRA MTF v2 — 4H REGIME / 1H SETUP / 15M TRIGGER
+ASTRA XAU / GOLD PATCH
 
-WHY
-The previous bot had a good risk/execution layer but still made too many decisions from
-a mostly 1H snapshot. This patch changes the decision architecture, not just thresholds.
+WHAT THIS ADDS
+- XAU becomes a fourth tradable asset: XAU-USDT-SWAP on OKX Demo.
+- XAU uses the same 4H -> 1H -> 15M architecture, but with stricter thresholds.
+- Official macro sources for gold:
+  * Federal Reserve RSS
+  * U.S. Bureau of Labor Statistics RSS
+  * U.S. Bureau of Economic Analysis RSS
+  * U.S. Treasury official daily yield-curve XML
+- Reuters/Bloomberg/etc remain discovery/corroboration sources through Google News.
+- MarketTwits remains discovery only; it cannot be the sole basis for a HIGH-impact trade.
+- No DXY value is fabricated. DXY is explicitly UNAVAILABLE until a reliable feed is configured.
+- Fresh verified HIGH-impact XAU macro news gets a short settle window before entry.
+- Weekend XAU new entries are blocked by default.
 
-NEW DECISION PIPELINE
-4H regime
-  -> 1H setup
-    -> 15M confirmed trigger
-      -> ASTRA final decision
-        -> fresh MTF re-check
-          -> Risk Engine
-            -> OKX Demo
+XAU LEVERAGE
+- high/elevated volatility: 5x
+- normal qualified setup: 7x
+- best setup only: 10x
+- range is hard-capped to 5x..10x for XAU
+- leverage DOES NOT increase the Risk Engine's dollar loss budget.
 
-WHAT IS ADDED
-- OKX confirmed 15m / 1H / 4H swap candles for BTC, ETH and GRAM.
-- EMA20/50/200, RSI14, ATR14, structure, breakout, volume ratio on every timeframe.
-- Deterministic MTF gate: ASTRA is not called unless 4H+1H+15M align.
-- Fresh MTF re-check immediately before market order.
-- Entry drift guard because the bot executes market orders.
-- Loss-streak circuit breaker: 3 consecutive losses -> 6 hour pause by default.
-- Confidence/MTF-quality risk tiers.
-- Dynamic leverage: 2x high volatility, 3x normal, 5x only best setups.
-- 15x is intentionally NOT enabled.
-- Trade journal now records setup_type, MTF quality, trade quality, and risk tier.
+CRYPTO LEVERAGE IS UNCHANGED.
 
-SAFE RAILWAY SETTINGS FOR THE NEXT CLEAN DEMO TEST
-AUTO_DECISION=false
+RAILWAY VARIABLES TO ADD
+XAU_MTF_MIN_QUALITY=78
+XAU_MIN_TRADE_CONFIDENCE=84
+XAU_WEEKEND_BLOCK=true
+XAU_MACRO_PRIMARY_REQUIRED=true
+XAU_NEWS_SETTLE_MINUTES=5
 
-Add/change:
-DECISION_INTERVAL_SECONDS=900
-MTF_ENABLED=true
-MTF_MIN_QUALITY=72
-MTF_TRIGGER_MIN_COMPONENTS=3
-ENTRY_DRIFT_MAX_PCT=0.25
-MIN_TRADE_CONFIDENCE=80
+XAU_MIN_LEVERAGE=5
+XAU_NORMAL_LEVERAGE=7
+XAU_MAX_LEVERAGE=10
+XAU_BEST_SETUP_MIN_QUALITY=92
+XAU_BEST_SETUP_MIN_CONFIDENCE=94
+XAU_BEST_SETUP_MAX_STOP_PCT=1.50
 
-RISK_PCT_80_84=0.0035
-RISK_PCT_85_91=0.005
-RISK_PCT_92_PLUS=0.0075
-
-DEFAULT_LEVERAGE=3
-MAX_LEVERAGE=5
-LEVERAGE_HIGH_VOL=2
-LEVERAGE_NORMAL=3
-LEVERAGE_BEST_SETUP=5
-BEST_SETUP_MIN_QUALITY=90
-BEST_SETUP_MIN_CONFIDENCE=92
-BEST_SETUP_MAX_STOP_PCT=1.50
-
-MIN_TP1_R=1.2
-MIN_TP2_R=2.0
-
-LOSS_STREAK_LIMIT=3
-LOSS_STREAK_PAUSE_SECONDS=21600
-
-For the clean validation phase I recommend:
-MAX_OPEN_POSITIONS=1
-MAX_TOTAL_EXPOSURE_PCT=0.20
-MAX_POSITION_PCT=0.20
-NORMAL_RISK_PCT=0.01
-HARD_RISK_PCT=0.01
-
-INSTALL
-1) AUTO_DECISION=false
-2) Replace/add all files in this patch.
-3) Temporary Start Command:
-   python repo_selfcheck.py && python test_mtf_strategy.py && python worker.py
-4) The test is read-only: it DOES NOT open or close orders.
-5) Expected: repo_selfcheck OK; test status OK; MTF data status OK for BTC/ETH/GRAM.
+SAFE INSTALL
+1) Set AUTO_DECISION=false
+2) Upload/replace all files from this patch.
+3) Temporary Railway Start Command:
+   python repo_selfcheck.py && python test_xau_support.py && python worker.py
+4) Redeploy.
+5) Expected:
+   repo_selfcheck = OK
+   test_xau_support.status = OK
+   okx_instrument.instId = XAU-USDT-SWAP
+   okx_instrument.state = live
+   market.mtf_status = OK
+   news.status = OK
+   will_open_order = false
 6) Return Start Command:
    python worker.py
 7) Keep AUTO_DECISION=false and send the test log for review.
-8) Only then enable AUTO_DECISION=true.
+8) Only after review enable AUTO_DECISION=true.
 
-NOTE ON LEVERAGE
-Leverage does not increase the allowed dollar risk. The Risk Engine still sizes from
-the stop distance and the risk budget. 5x is only a margin-efficiency setting for the
-best setups; it is not a reward for model confidence.
+IMPORTANT
+Commodity availability and leverage limits can depend on the OKX account/region.
+The read-only preflight verifies whether XAU-USDT-SWAP is actually available in your Demo account.
+It does not set leverage and does not place any order.

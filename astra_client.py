@@ -5,7 +5,7 @@ from openai import OpenAI
 import config
 
 INSTRUCTIONS="""You are ASTRA TRADER's final crypto trade decision engine.
-Trade only BTC, ETH, or GRAM. Return exactly one JSON object.
+Trade only BTC, ETH, GRAM, or XAU. Return exactly one JSON object.
 
 MANDATORY DECISION PROCESS:
 1) 4H = market regime. Never fight a clearly opposite 4H regime.
@@ -15,6 +15,9 @@ MANDATORY DECISION PROCESS:
 5) Prefer pullback/retest entries and clean trend continuation over impulse chasing.
 6) News is context, not an automatic BUY/SELL instruction.
 7) If the setup is unclear, late, crowded, contradictory, or has poor reward/risk: WAIT.
+8) For XAU only: treat Fed/BLS/BEA macro news and U.S. Treasury yields as first-class context.
+   Do not infer DXY if it is unavailable. A macro headline alone is not an entry;
+   require the 4H -> 1H -> 15M price confirmation supplied by the system.
 
 The deterministic Python MTF gate, anti-chase rules, portfolio guards, and Risk Engine
 have authority over you. Never override them.
@@ -64,6 +67,7 @@ def _compact(p):
             "spot":m.get("spot"),
             "multi_timeframe":m.get("multi_timeframe"),
             "perp_okx":m.get("perp_okx"),
+            "gold_macro":m.get("gold_macro"),
             "data_quality":m.get("data_quality"),
         },
         "news":{

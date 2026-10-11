@@ -1,5 +1,5 @@
 import os
-ALLOWED_ASSETS=("BTC","ETH","GRAM")
+ALLOWED_ASSETS=("BTC","ETH","GRAM","XAU")
 STATE_DIR=os.getenv("STATE_DIR","/workspace/data")
 INITIAL_EQUITY=float(os.getenv("INITIAL_EQUITY","100"))
 NORMAL_POSITION_PCT=float(os.getenv("NORMAL_POSITION_PCT","0.10"))
@@ -98,3 +98,20 @@ BEST_SETUP_MAX_STOP_PCT = float(os.getenv("BEST_SETUP_MAX_STOP_PCT", "1.50"))
 # Pause new entries after a losing streak.
 LOSS_STREAK_LIMIT = int(os.getenv("LOSS_STREAK_LIMIT", "3"))
 LOSS_STREAK_PAUSE_SECONDS = int(os.getenv("LOSS_STREAK_PAUSE_SECONDS", "21600"))
+
+# ===== XAU / Gold =====
+# Gold uses a stricter MTF + macro filter than crypto.
+XAU_MTF_MIN_QUALITY = float(os.getenv("XAU_MTF_MIN_QUALITY", "78"))
+XAU_MIN_TRADE_CONFIDENCE = float(os.getenv("XAU_MIN_TRADE_CONFIDENCE", "84"))
+XAU_WEEKEND_BLOCK = os.getenv("XAU_WEEKEND_BLOCK", "true").lower() == "true"
+XAU_MACRO_PRIMARY_REQUIRED = os.getenv("XAU_MACRO_PRIMARY_REQUIRED", "true").lower() == "true"
+XAU_NEWS_SETTLE_MINUTES = int(os.getenv("XAU_NEWS_SETTLE_MINUTES", "5"))
+
+# Requested leverage range for XAU only.
+# Leverage changes margin usage, NOT the allowed $ risk to the stop.
+XAU_MIN_LEVERAGE = float(os.getenv("XAU_MIN_LEVERAGE", "5"))
+XAU_NORMAL_LEVERAGE = float(os.getenv("XAU_NORMAL_LEVERAGE", "7"))
+XAU_MAX_LEVERAGE = float(os.getenv("XAU_MAX_LEVERAGE", "10"))
+XAU_BEST_SETUP_MIN_QUALITY = float(os.getenv("XAU_BEST_SETUP_MIN_QUALITY", "92"))
+XAU_BEST_SETUP_MIN_CONFIDENCE = float(os.getenv("XAU_BEST_SETUP_MIN_CONFIDENCE", "94"))
+XAU_BEST_SETUP_MAX_STOP_PCT = float(os.getenv("XAU_BEST_SETUP_MAX_STOP_PCT", "1.50"))

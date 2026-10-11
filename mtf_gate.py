@@ -113,13 +113,16 @@ def evaluate(package):
     if mtf.get("status")=="FAILED":
         return {"passed":False,"direction":None,"quality":0,"reason":"MTF_DATA_FAILED"}
 
+    asset=str(package.get("asset","")).upper()
+    min_quality=config.XAU_MTF_MIN_QUALITY if asset=="XAU" else config.MTF_MIN_QUALITY
+
     candidates=[]
     for direction in ("LONG","SHORT"):
         regime_ok=_regime_ok(frames.get("4h",{}),direction)
         setup_ok=_setup_ok(frames.get("1h",{}),direction)
         trigger=_trigger(frames.get("15m",{}),direction)
         quality=_quality(frames,direction)
-        passed=bool(regime_ok and setup_ok and trigger["confirmed"] and quality>=config.MTF_MIN_QUALITY)
+        passed=bool(regime_ok and setup_ok and trigger["confirmed"] and quality>=min_quality)
         candidates.append({
             "direction":direction,
             "passed":passed,
@@ -138,6 +141,7 @@ def evaluate(package):
         "passed":bool(chosen),
         "direction":chosen["direction"] if chosen else None,
         "quality":chosen["quality"] if chosen else (best["quality"] if best else 0),
+        "minimum_quality":min_quality,
         "reason":"MTF_ALIGNED" if chosen else "MTF_NOT_ALIGNED",
         "trigger_candle_id":tf15.get("last_confirmed_close_time_ms"),
         "frames_summary":{

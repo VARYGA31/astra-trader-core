@@ -5,7 +5,9 @@ HIGH_WORDS = {
     "approval","approved","reject","rejected","ban","banned","lawsuit","charges","charged",
     "hack","hacked","exploit","breach","outage","shutdown","bankruptcy","insolvency",
     "etf","rate cut","rate hike","emergency","sanction","seizure","war","attack","missile",
-    "tariff","ceasefire","default","liquidation","security incident","fork","mainnet"
+    "tariff","ceasefire","default","liquidation","security incident","fork","mainnet",
+    "cpi","pce","nonfarm payroll","payrolls","fomc","powell","inflation",
+    "treasury yield","treasury yields","interest rate decision","jobs report"
 }
 
 STOPWORDS={"the","and","for","with","from","that","this","will","have","has","into","after","about","over",
@@ -22,13 +24,14 @@ def similarity(a,b):
 def classify_event(title,summary=""):
     t=(title+" "+summary).lower()
     if any(x in t for x in ["sec ","regulat","lawsuit","charges","санкц","регулир"]):return "REGULATION"
-    if any(x in t for x in ["federal reserve","fomc","rate cut","rate hike","inflation","cpi","ставк"]):return "MACRO"
+    if any(x in t for x in ["federal reserve","fomc","powell","rate cut","rate hike","inflation","cpi","pce","payroll","employment","unemployment","treasury yield","dollar","ставк"]):return "MACRO"
     if any(x in t for x in ["hack","exploit","breach","взлом","security incident"]):return "SECURITY"
     if any(x in t for x in ["war","missile","attack","ceasefire","iran","украин","войн","атак","геополит"]):return "GEOPOLITICS"
     if any(x in t for x in ["coinbase","binance","bybit","okx","kraken","exchange","бирж"]):return "EXCHANGE"
     if any(x in t for x in ["upgrade","fork","mainnet","staking","protocol","апгрейд"]):return "PROTOCOL"
     if any(x in t for x in ["ton foundation","the open network","telegram","toncoin"]):return "TELEGRAM_TON"
     if "etf" in t:return "ETF"
+    if any(x in t for x in ["gold","bullion","xau"]):return "COMMODITY_GOLD"
     return "GENERAL"
 
 def impact_hint(title,summary="",tier=3):
