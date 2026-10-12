@@ -115,3 +115,12 @@ XAU_MAX_LEVERAGE = float(os.getenv("XAU_MAX_LEVERAGE", "10"))
 XAU_BEST_SETUP_MIN_QUALITY = float(os.getenv("XAU_BEST_SETUP_MIN_QUALITY", "92"))
 XAU_BEST_SETUP_MIN_CONFIDENCE = float(os.getenv("XAU_BEST_SETUP_MIN_CONFIDENCE", "94"))
 XAU_BEST_SETUP_MAX_STOP_PCT = float(os.getenv("XAU_BEST_SETUP_MAX_STOP_PCT", "1.50"))
+
+
+# ===== Passive observability / analytics =====
+# These settings DO NOT change signals, risk, leverage, or execution.
+OBSERVABILITY_ENABLED = os.getenv("OBSERVABILITY_ENABLED", "true").lower() == "true"
+SHADOW_JOURNAL_ENABLED = os.getenv("SHADOW_JOURNAL_ENABLED", "true").lower() == "true"
+SHADOW_MIN_QUALITY = float(os.getenv("SHADOW_MIN_QUALITY", "50"))
+OBSERVABILITY_LOG_MAX_MB = float(os.getenv("OBSERVABILITY_LOG_MAX_MB", "20"))
+ANALYTICS_RECENT_LIMIT = int(os.getenv("ANALYTICS_RECENT_LIMIT", "20"))

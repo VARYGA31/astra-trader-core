@@ -3,7 +3,7 @@ import json,time,threading,traceback
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from datetime import datetime,timezone
 
-import config,news_listener,position_monitor,trade_cycle,paper_execution,execution_router,decision_gate
+import config,news_listener,position_monitor,trade_cycle,paper_execution,execution_router,decision_gate,observability
 import position_exit_guard
 from astra_client import decide
 
@@ -21,14 +21,43 @@ R={
     "model_skips":0,
     "exit_model_calls":0,
     "emergency_exits":0,
+    # Passive diagnostics. These never control execution.
+    "last_model_decision":None,
+    "last_trade_rejection":None,
+    "last_approved_trade":None,
+    "skip_reasons":{},
+    "observability":{},
+    "performance":{},
 }
 def now():return datetime.now(timezone.utc)
 
+def refresh_observability():
+    try:
+        o=observability.health_summary()
+        R["observability"]=o
+        R["last_model_decision"]=o.get("last_model_decision")
+        R["last_trade_rejection"]=o.get("last_trade_rejection")
+        R["last_approved_trade"]=o.get("last_approved_trade")
+        R["skip_reasons"]=o.get("skip_reasons",{})
+        started=o.get("started_at_utc")
+        R["performance"]=observability.trade_performance(started)
+    except Exception:
+        # Diagnostics must never be able to degrade the trading worker.
+        pass
+
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path not in {"/","/health"}:
+        path=self.path.split("?",1)[0]
+        if path not in {"/","/health","/analytics"}:
             self.send_response(404);self.end_headers();return
-        b=json.dumps(R,ensure_ascii=False).encode()
+
+        if path=="/analytics":
+            payload=observability.analytics_report()
+        else:
+            refresh_observability()
+            payload=R
+
+        b=json.dumps(payload,ensure_ascii=False).encode()
         self.send_response(200 if R["status"]!="failed" else 503)
         self.send_header("Content-Type","application/json")
         self.send_header("Content-Length",str(len(b)))
@@ -46,6 +75,7 @@ def main():
 
     paper_execution.init_state(config.INITIAL_EQUITY,False)
     R["status"]="ok"
+    refresh_observability()
     last_news=0
     last_pos=0
     last_exit=0
@@ -60,6 +90,9 @@ def main():
                 n=news_listener.poll_once(2)
                 R["last_news"]=n
                 last_news=t
+
+                for event in n.get("new_events",[]):
+                    observability.record_news_event(event)
 
                 reviews=[]
                 for e in n.get("high_impact_new",[]):
@@ -77,6 +110,7 @@ def main():
 
             if t-last_pos>=config.POSITION_POLL_SECONDS:
                 R["last_position_check"]=check_positions()
+                refresh_observability()
                 last_pos=t
 
             if (
@@ -112,6 +146,12 @@ def main():
                             "decision":d,
                             "execution":x,
                         }
+
+                        # Passive funnel/journal. It cannot authorize or block trades.
+                        observability.record_decision(
+                            p,gate,d,x,model_called=bool(gate.get("call_model"))
+                        )
+                        refresh_observability()
                         last_decision[a]=t
 
             R["status"]="ok"
