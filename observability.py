@@ -135,6 +135,7 @@ def _compact_candidates(mtf):
         out.append({
             "direction": c.get("direction"),
             "passed": bool(c.get("passed")),
+            "mode": c.get("mode"),
             "quality": c.get("quality"),
             "regime_4h_ok": c.get("regime_4h_ok"),
             "setup_1h_ok": c.get("setup_1h_ok"),
@@ -212,6 +213,7 @@ def record_decision(package, gate, decision, execution, model_called=False):
             "gate_reason": gate_reason,
             "allowed_direction": gate.get("allowed_direction") or mtf.get("direction"),
             "mtf_quality": gate.get("mtf_quality", mtf.get("quality")),
+            "mtf_mode": gate.get("mtf_mode", mtf.get("mode")),
             "mtf_minimum_quality": mtf.get("minimum_quality"),
             "mtf_passed": mtf.get("passed"),
             "best_candidate": best,
@@ -303,6 +305,7 @@ def record_decision(package, gate, decision, execution, model_called=False):
                     "price": row["market"].get("price"),
                     "direction": best.get("direction"),
                     "quality": best.get("quality"),
+                    "mtf_mode": row.get("mtf_mode") or best.get("mode"),
                     "minimum_quality": row.get("mtf_minimum_quality"),
                     "regime_4h_ok": best.get("regime_4h_ok"),
                     "setup_1h_ok": best.get("setup_1h_ok"),

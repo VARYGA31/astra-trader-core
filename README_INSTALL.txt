@@ -1,82 +1,57 @@
-ASTRA OBSERVABILITY + ANALYTICS PATCH
+ASTRA MTF TRANSITION PATCH
 
-PURPOSE
-This patch improves visibility and data collection WITHOUT changing the trading strategy.
+WHY
+Analytics after 312 decisions showed 283 MTF_NOT_ALIGNED skips, 12 model calls,
+12 ASTRA WAITs, and 0 opened trades. The bottleneck is before Risk Engine.
+This patch does NOT simply lower the normal quality threshold.
 
-IT DOES NOT CHANGE
-- MTF thresholds
-- LONG / SHORT logic
-- Risk Engine
-- leverage
-- position sizing
-- TP / SL / breakeven
-- news verification rules
-- emergency exit rules
-- OKX execution
+WHAT CHANGES
+- NORMAL mode remains unchanged.
+- New TRANSITION mode for BTC / ETH / GRAM only.
+- XAU remains strict and cannot use transition mode.
 
-WHAT IT ADDS
-1) Expanded /health:
-   last_model_decision
-   last_trade_rejection
-   last_approved_trade
-   skip_reasons
-   observability
-   performance
+TRANSITION REQUIREMENTS
+- 4H trend must be MIXED, never clearly opposite.
+- 4H structure/momentum cannot be explicitly opposite.
+- At least one 4H component must support the direction.
+- 1H setup must already be confirmed.
+- 15M trigger must be strong: at least 4 components.
+- MTF quality >= 60.
+- Existing anti-chase must pass.
+- ASTRA confidence >= 90.
+- TP1 >= 1.2R and TP2 >= 2.0R.
+- Transition risk budget is only 0.30% of equity by default.
+- Existing daily-loss, drawdown, exposure, correlation, cooldown, news, SL/TP,
+  breakeven and portfolio guards remain unchanged.
 
-2) New /analytics endpoint:
-   decision funnel
-   model calls / skips / waits
-   skip reasons
-   deterministic rejection reasons
-   performance by asset
-   performance by LONG/SHORT
-   performance by setup_type
-   win rate
-   profit factor
-   average R where reconstructable
-   max losing streak
-   recent shadow setups
+SAFE VARIABLES
+MTF_TRANSITION_ENABLED=true
+MTF_TRANSITION_MIN_QUALITY=60
+MTF_TRANSITION_TRIGGER_MIN_COMPONENTS=4
+MTF_TRANSITION_MIN_CONFIDENCE=90
+MTF_TRANSITION_RISK_PCT=0.0030
+MTF_TRANSITION_MIN_TP1_R=1.20
+MTF_TRANSITION_MIN_TP2_R=2.00
 
-3) Persistent files under STATE_DIR (/data on Railway):
-   /data/observability_state.json
-   /data/decision_events.jsonl
-   /data/shadow_setups.jsonl
-   /data/news_events.jsonl
-
-4) Shadow setup journal
-   Promising blocked setups are recorded but NEVER traded.
-   Default SHADOW_MIN_QUALITY=50.
-   This lets us later test whether thresholds were too strict without weakening them now.
-
-5) CLI report:
-   python analytics_report.py
-   python analytics_report.py --days 7
-
-SAFE DEFAULT VARIABLES
-OBSERVABILITY_ENABLED=true
-SHADOW_JOURNAL_ENABLED=true
-SHADOW_MIN_QUALITY=50
-OBSERVABILITY_LOG_MAX_MB=20
-ANALYTICS_RECENT_LIMIT=20
-
-SAFE INSTALL
+INSTALL
 1) Set AUTO_DECISION=false.
-2) Upload/replace all files from this ZIP.
+2) Upload/replace every file from this ZIP.
 3) Temporary Railway Start Command:
-   python repo_selfcheck.py && python test_observability.py && python worker.py
+   python repo_selfcheck.py && python test_transition_mode.py && python worker.py
 4) Redeploy.
 5) Expected:
    repo_selfcheck -> status OK
-   test_observability -> status OK
+   test_transition_mode -> status OK
    will_open_order -> false
    will_close_order -> false
    will_call_model -> false
-6) Open /health and confirm status=ok, last_error=null.
-7) Open /analytics. It may initially have zero decision rows; collection begins after deployment.
-8) Return Start Command to:
-   python worker.py
-9) Set AUTO_DECISION=true.
+   transition_gate.mode -> TRANSITION
+   opposite_4h_blocked -> true
+   xau_transition_disabled -> true
+6) Return Start Command to: python worker.py
+7) Open /health, confirm status=ok and last_error=null.
+8) Then set AUTO_DECISION=true.
 
-NOTE
-Existing trade_journal.jsonl is read for historical trade metrics, with duplicate close protection.
-Decision-funnel statistics start from installation because older gate decisions were not persistently journaled.
+OBSERVABILITY
+Existing /analytics is preserved. New decision rows include mtf_mode=TRANSITION or NORMAL.
+This lets us compare the new mode separately instead of guessing.

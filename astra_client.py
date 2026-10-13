@@ -15,7 +15,11 @@ MANDATORY DECISION PROCESS:
 5) Prefer pullback/retest entries and clean trend continuation over impulse chasing.
 6) News is context, not an automatic BUY/SELL instruction.
 7) If the setup is unclear, late, crowded, contradictory, or has poor reward/risk: WAIT.
-8) For XAU only: treat Fed/BLS/BEA macro news and U.S. Treasury yields as first-class context.
+8) If model_gate.mtf.mode is TRANSITION: 4H must be MIXED rather than opposite.
+   Treat it as a lower-risk early-regime setup. Only return LONG/SHORT when the 1H setup
+   and strong 15M trigger are clean, the entry is not chased, reward/risk is strong,
+   and your confidence is at least 90. Otherwise WAIT.
+9) For XAU only: treat Fed/BLS/BEA macro news and U.S. Treasury yields as first-class context.
    Do not infer DXY if it is unavailable. A macro headline alone is not an entry;
    require the 4H -> 1H -> 15M price confirmation supplied by the system.
 
@@ -62,6 +66,7 @@ def _compact(p):
         "execution_mode":p.get("execution_mode"),
         "account_state":p.get("account_state"),
         "guards":p.get("guards"),
+        "model_gate":p.get("model_gate"),
         "market":{
             "generated_at_utc":m.get("generated_at_utc"),
             "spot":m.get("spot"),

@@ -70,12 +70,31 @@ def evaluate(d):
 
     confidence=float(d.get("confidence",0) or 0)
     mtf_quality=float(d.get("mtf_quality",0) or 0)
-    min_conf=config.XAU_MIN_TRADE_CONFIDENCE if asset=="XAU" else config.MIN_TRADE_CONFIDENCE
-    min_mtf=config.XAU_MTF_MIN_QUALITY if asset=="XAU" else config.MTF_MIN_QUALITY
-    if confidence<min_conf:
-        return reject("CONFIDENCE_TOO_LOW",{"confidence":confidence,"minimum":min_conf})
-    if mtf_quality<min_mtf:
-        return reject("MTF_QUALITY_TOO_LOW",{"mtf_quality":mtf_quality,"minimum":min_mtf})
+    mtf_mode=str(d.get("mtf_mode") or d.get("mtf_gate",{}).get("mode") or "NORMAL").upper()
+    is_transition=(mtf_mode=="TRANSITION")
+
+    if is_transition:
+        # Transition mode is crypto-only and deliberately stricter on model
+        # confidence while using a smaller deterministic risk budget.
+        if asset=="XAU":
+            return reject("XAU_TRANSITION_NOT_ALLOWED")
+        if confidence<config.MTF_TRANSITION_MIN_CONFIDENCE:
+            return reject("TRANSITION_CONFIDENCE_TOO_LOW",{
+                "confidence":confidence,
+                "minimum":config.MTF_TRANSITION_MIN_CONFIDENCE,
+            })
+        if mtf_quality<config.MTF_TRANSITION_MIN_QUALITY:
+            return reject("TRANSITION_MTF_QUALITY_TOO_LOW",{
+                "mtf_quality":mtf_quality,
+                "minimum":config.MTF_TRANSITION_MIN_QUALITY,
+            })
+    else:
+        min_conf=config.XAU_MIN_TRADE_CONFIDENCE if asset=="XAU" else config.MIN_TRADE_CONFIDENCE
+        min_mtf=config.XAU_MTF_MIN_QUALITY if asset=="XAU" else config.MTF_MIN_QUALITY
+        if confidence<min_conf:
+            return reject("CONFIDENCE_TOO_LOW",{"confidence":confidence,"minimum":min_conf})
+        if mtf_quality<min_mtf:
+            return reject("MTF_QUALITY_TOO_LOW",{"mtf_quality":mtf_quality,"minimum":min_mtf})
 
     entry=float(d["entry"]); stop=float(d["stop_loss"])
     tp1=float(d["take_profit_1"]); tp2=float(d["take_profit_2"])
@@ -89,10 +108,12 @@ def evaluate(d):
             return reject("INVALID_LEVELS_FOR_SHORT")
 
     rr1=_rr(entry,stop,tp1); rr2=_rr(entry,stop,tp2)
-    if rr1<config.MIN_TP1_R:
-        return reject("TP1_REWARD_RISK_TOO_LOW",{"tp1_r":rr1,"minimum":config.MIN_TP1_R})
-    if rr2<config.MIN_TP2_R:
-        return reject("TP2_REWARD_RISK_TOO_LOW",{"tp2_r":rr2,"minimum":config.MIN_TP2_R})
+    min_tp1=max(config.MIN_TP1_R,config.MTF_TRANSITION_MIN_TP1_R) if is_transition else config.MIN_TP1_R
+    min_tp2=max(config.MIN_TP2_R,config.MTF_TRANSITION_MIN_TP2_R) if is_transition else config.MIN_TP2_R
+    if rr1<min_tp1:
+        return reject("TP1_REWARD_RISK_TOO_LOW",{"tp1_r":rr1,"minimum":min_tp1,"mtf_mode":mtf_mode})
+    if rr2<min_tp2:
+        return reject("TP2_REWARD_RISK_TOO_LOW",{"tp2_r":rr2,"minimum":min_tp2,"mtf_mode":mtf_mode})
 
     if config.ONE_POSITION_PER_ASSET and bool(d.get("asset_already_open",False)):
         return reject("ASSET_ALREADY_HAS_OPEN_POSITION")
@@ -109,9 +130,13 @@ def evaluate(d):
     stop_dist_pct=abs(entry-stop)/entry
     if stop_dist_pct<=0:return reject("INVALID_STOP_DISTANCE")
 
-    risk_pct,quality=_risk_pct(confidence,mtf_quality,dd_mult)
-    if risk_pct is None:
-        return reject("TRADE_QUALITY_TOO_LOW",{"quality":quality})
+    if is_transition:
+        quality=min(confidence,mtf_quality)
+        risk_pct=min(config.MTF_TRANSITION_RISK_PCT*dd_mult,config.HARD_RISK_PCT)
+    else:
+        risk_pct,quality=_risk_pct(confidence,mtf_quality,dd_mult)
+        if risk_pct is None:
+            return reject("TRADE_QUALITY_TOO_LOW",{"quality":quality})
 
     risk_usd=eq*risk_pct
     leverage=_leverage(asset,d.get("volatility_regime"),quality,confidence,stop_dist_pct)
@@ -140,6 +165,7 @@ def evaluate(d):
         "tp2_r":rr2,
         "confidence":confidence,
         "mtf_quality":mtf_quality,
+        "mtf_mode":mtf_mode,
         "trade_quality":quality,
         "risk_pct_budget":risk_pct,
         "position_notional_usd":notional,

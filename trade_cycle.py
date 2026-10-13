@@ -165,6 +165,7 @@ def execute(decision):
     decision["planned_entry"]=planned
     decision["entry"]=current
     decision["mtf_quality"]=mtf.get("quality")
+    decision["mtf_mode"]=mtf.get("mode") or "NORMAL"
     decision["mtf_gate"]=mtf
 
     s = p["account_state"]

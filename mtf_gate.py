@@ -48,6 +48,27 @@ def _regime_ok(tf4, direction):
     # Allow a developing regime only when structure and EMA50 side both agree.
     return _matches(r.get("structure"),direction) and _price_side(tf4,direction,"ema50")
 
+def _transition_4h_ok(tf4, direction):
+    """Conservative transition regime for crypto only.
+
+    Transition is allowed only when the 4H trend is MIXED (not opposite),
+    neither structure nor momentum is explicitly opposite, and at least one
+    4H component already supports the proposed direction.
+    """
+    if tf4.get("status")!="OK":
+        return False
+    r=tf4.get("regimes",{})
+    if r.get("trend") != "MIXED":
+        return False
+    if _opposes(r.get("structure"),direction) or _opposes(r.get("momentum"),direction):
+        return False
+    support=[
+        _matches(r.get("structure"),direction),
+        _matches(r.get("momentum"),direction),
+        _price_side(tf4,direction,"ema20"),
+    ]
+    return sum(1 for x in support if x) >= 1
+
 def _setup_ok(tf1, direction):
     if tf1.get("status")!="OK":
         return False
@@ -109,40 +130,81 @@ def evaluate(package):
     mtf=package.get("decision_context",{}).get("market",{}).get("multi_timeframe",{})
     frames=mtf.get("frames",{})
     if not config.MTF_ENABLED:
-        return {"passed":True,"direction":None,"quality":100,"reason":"MTF_DISABLED"}
+        return {"passed":True,"direction":None,"quality":100,"reason":"MTF_DISABLED","mode":"DISABLED"}
     if mtf.get("status")=="FAILED":
-        return {"passed":False,"direction":None,"quality":0,"reason":"MTF_DATA_FAILED"}
+        return {"passed":False,"direction":None,"quality":0,"reason":"MTF_DATA_FAILED","mode":None}
 
     asset=str(package.get("asset","")).upper()
     min_quality=config.XAU_MTF_MIN_QUALITY if asset=="XAU" else config.MTF_MIN_QUALITY
+    transition_enabled=bool(config.MTF_TRANSITION_ENABLED and asset!="XAU")
 
     candidates=[]
     for direction in ("LONG","SHORT"):
-        regime_ok=_regime_ok(frames.get("4h",{}),direction)
+        tf4=frames.get("4h",{})
+        regime_ok=_regime_ok(tf4,direction)
         setup_ok=_setup_ok(frames.get("1h",{}),direction)
         trigger=_trigger(frames.get("15m",{}),direction)
         quality=_quality(frames,direction)
-        passed=bool(regime_ok and setup_ok and trigger["confirmed"] and quality>=min_quality)
+
+        normal_pass=bool(
+            regime_ok
+            and setup_ok
+            and trigger["confirmed"]
+            and quality>=min_quality
+        )
+
+        transition_4h_ok=_transition_4h_ok(tf4,direction) if transition_enabled else False
+        transition_trigger_ok=bool(
+            trigger.get("confirmed")
+            and int(trigger.get("count") or 0) >= config.MTF_TRANSITION_TRIGGER_MIN_COMPONENTS
+        )
+        transition_pass=bool(
+            transition_enabled
+            and not normal_pass
+            and not regime_ok
+            and transition_4h_ok
+            and setup_ok
+            and transition_trigger_ok
+            and quality>=config.MTF_TRANSITION_MIN_QUALITY
+        )
+
+        mode="NORMAL" if normal_pass else "TRANSITION" if transition_pass else None
         candidates.append({
             "direction":direction,
-            "passed":passed,
+            "passed":bool(normal_pass or transition_pass),
+            "mode":mode,
             "quality":quality,
+            "normal_minimum_quality":min_quality,
+            "transition_minimum_quality":config.MTF_TRANSITION_MIN_QUALITY if transition_enabled else None,
             "regime_4h_ok":regime_ok,
+            "transition_4h_ok":transition_4h_ok,
             "setup_1h_ok":setup_ok,
             "trigger_15m":trigger,
+            "transition_trigger_ok":transition_trigger_ok,
         })
 
     passed=[x for x in candidates if x["passed"]]
     best=max(candidates,key=lambda x:x["quality"]) if candidates else None
-    chosen=max(passed,key=lambda x:x["quality"]) if passed else None
+    chosen=max(passed,key=lambda x:(1 if x.get("mode")=="NORMAL" else 0,x["quality"])) if passed else None
 
     tf15=frames.get("15m",{})
     return {
         "passed":bool(chosen),
         "direction":chosen["direction"] if chosen else None,
+        "mode":chosen.get("mode") if chosen else None,
         "quality":chosen["quality"] if chosen else (best["quality"] if best else 0),
-        "minimum_quality":min_quality,
-        "reason":"MTF_ALIGNED" if chosen else "MTF_NOT_ALIGNED",
+        "minimum_quality": (
+            min_quality if chosen and chosen.get("mode")=="NORMAL"
+            else config.MTF_TRANSITION_MIN_QUALITY if chosen and chosen.get("mode")=="TRANSITION"
+            else min_quality
+        ),
+        "normal_minimum_quality":min_quality,
+        "transition_minimum_quality":config.MTF_TRANSITION_MIN_QUALITY if transition_enabled else None,
+        "reason":(
+            "MTF_ALIGNED_NORMAL" if chosen and chosen.get("mode")=="NORMAL"
+            else "MTF_ALIGNED_TRANSITION" if chosen and chosen.get("mode")=="TRANSITION"
+            else "MTF_NOT_ALIGNED"
+        ),
         "trigger_candle_id":tf15.get("last_confirmed_close_time_ms"),
         "frames_summary":{
             k:{
@@ -159,3 +221,4 @@ def evaluate(package):
         },
         "candidates":candidates,
     }
+

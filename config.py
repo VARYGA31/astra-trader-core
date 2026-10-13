@@ -124,3 +124,15 @@ SHADOW_JOURNAL_ENABLED = os.getenv("SHADOW_JOURNAL_ENABLED", "true").lower() == 
 SHADOW_MIN_QUALITY = float(os.getenv("SHADOW_MIN_QUALITY", "50"))
 OBSERVABILITY_LOG_MAX_MB = float(os.getenv("OBSERVABILITY_LOG_MAX_MB", "20"))
 ANALYTICS_RECENT_LIMIT = int(os.getenv("ANALYTICS_RECENT_LIMIT", "20"))
+
+
+# ===== MTF Transition Mode =====
+# Allows a conservative crypto setup while 4H is MIXED (never opposite),
+# when 1H setup + strong 15M trigger are already confirmed. XAU is excluded.
+MTF_TRANSITION_ENABLED = os.getenv("MTF_TRANSITION_ENABLED", "true").lower() == "true"
+MTF_TRANSITION_MIN_QUALITY = float(os.getenv("MTF_TRANSITION_MIN_QUALITY", "60"))
+MTF_TRANSITION_TRIGGER_MIN_COMPONENTS = int(os.getenv("MTF_TRANSITION_TRIGGER_MIN_COMPONENTS", "4"))
+MTF_TRANSITION_MIN_CONFIDENCE = float(os.getenv("MTF_TRANSITION_MIN_CONFIDENCE", "90"))
+MTF_TRANSITION_RISK_PCT = float(os.getenv("MTF_TRANSITION_RISK_PCT", "0.0030"))
+MTF_TRANSITION_MIN_TP1_R = float(os.getenv("MTF_TRANSITION_MIN_TP1_R", "1.20"))
+MTF_TRANSITION_MIN_TP2_R = float(os.getenv("MTF_TRANSITION_MIN_TP2_R", "2.00"))

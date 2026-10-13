@@ -254,6 +254,7 @@ def evaluate(package, force_event=False):
             "last_verified_event_id":ev,
             "last_mtf_direction":mtf.get("direction"),
             "last_mtf_quality":mtf.get("quality"),
+            "last_mtf_mode":mtf.get("mode"),
             "last_called_at_utc":datetime.now(timezone.utc).isoformat(),
         }
         _save(st)
@@ -263,6 +264,7 @@ def evaluate(package, force_event=False):
         "reason":reason,
         "allowed_direction":mtf.get("direction"),
         "mtf_quality":mtf.get("quality"),
+        "mtf_mode":mtf.get("mode"),
         "new_trigger_candle":new_trigger,
         "new_verified_high_event":new_event,
         "mtf":mtf,

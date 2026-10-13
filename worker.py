@@ -136,6 +136,10 @@ def main():
                             x={"status":"NO_TRADE","reason":gate["reason"]}
                             R["model_skips"]+=1
                         else:
+                            # Include the deterministic gate result in the model context.
+                            # This lets ASTRA distinguish NORMAL vs TRANSITION without
+                            # giving it authority to override deterministic rules.
+                            p["model_gate"]=gate
                             d=decide(p)
                             d["gate"]=gate
                             R["model_calls"]+=1
