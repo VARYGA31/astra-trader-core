@@ -5,7 +5,7 @@ import hmac
 import json
 import time
 from datetime import datetime, timezone
-from decimal import Decimal, ROUND_DOWN
+from decimal import Decimal, ROUND_DOWN, ROUND_UP
 from urllib.parse import urlencode
 
 import requests
@@ -119,6 +119,41 @@ class OKXDemoAdapter:
         step = Decimal(str(step))
         return (value / step).to_integral_value(rounding=ROUND_DOWN) * step
 
+    @staticmethod
+    def _ceil_step(value, step):
+        value = Decimal(str(value))
+        step = Decimal(str(step))
+        return (value / step).to_integral_value(rounding=ROUND_UP) * step
+
+    def normalize_entry_limit_price(self, asset, action, price):
+        """Round without weakening the execution-quality boundary.
+
+        LONG = maximum acceptable buy price -> round DOWN.
+        SHORT = minimum acceptable sell price -> round UP.
+        """
+        info=self.instrument(asset)
+        tick=Decimal(str(info["tickSz"]))
+        p=Decimal(str(price))
+        if str(action).upper()=="LONG":
+            q=self._floor_step(p,tick)
+        elif str(action).upper()=="SHORT":
+            q=self._ceil_step(p,tick)
+        else:
+            raise RuntimeError("INVALID_ACTION")
+        return format(q,"f")
+
+    def contract_usd_value(self, asset, price):
+        info=self.instrument(asset)
+        px=Decimal(str(price))
+        ct_val=Decimal(str(info.get("ctVal") or "1"))
+        ct_ccy=str(info.get("ctValCcy") or "")
+        base_ccy=self.inst_id(asset).split("-")[0]
+        if ct_ccy==base_ccy:
+            return float(ct_val*px)
+        if ct_ccy in {"USD","USDT","USDC"}:
+            return float(ct_val)
+        raise RuntimeError(f"OKX_UNSUPPORTED_CONTRACT_VALUE_CCY:{ct_ccy}")
+
     def contracts_for_notional(self, asset, notional_usd):
         info = self.instrument(asset)
         px = Decimal(str(self.ticker(asset)))
@@ -180,6 +215,48 @@ class OKXDemoAdapter:
                     raise RuntimeError(f"OKX_ORDER_TERMINAL:{last}")
             time.sleep(0.8)
         return last
+
+    def wait_terminal(self, asset, ord_id, timeout=15):
+        """Wait for filled/canceled without turning a safe FOK cancel into an exception."""
+        deadline=time.time()+timeout
+        last=None
+        while time.time()<deadline:
+            d=self.order_details(asset,ord_id).get("data",[])
+            if d:
+                last=d[0]
+                if last.get("state") in {"filled","canceled","mmp_canceled"}:
+                    return last
+            time.sleep(0.35)
+        return last
+
+    def cancel_attached_algos(self, asset, parent_ord_id, retries=4):
+        """Best-effort cleanup for the post-fill failsafe path."""
+        inst=self.inst_id(asset)
+        algo_ids=[]
+        for _ in range(max(1,int(retries))):
+            try:
+                data=self.order_details(asset,parent_ord_id).get("data",[])
+                row=data[0] if data else {}
+                algo_ids=[
+                    str(x.get("attachAlgoId"))
+                    for x in (row.get("attachAlgoOrds") or [])
+                    if x.get("attachAlgoId")
+                ]
+                if algo_ids:
+                    break
+            except Exception:
+                pass
+            time.sleep(0.35)
+
+        if not algo_ids:
+            return {"status":"NO_ALGOS_FOUND","algo_ids":[]}
+
+        payload=[{"instId":inst,"algoId":x} for x in algo_ids]
+        try:
+            r=self.private_post("/api/v5/trade/cancel-algos",payload)
+            return {"status":"REQUESTED","algo_ids":algo_ids,"result":r}
+        except Exception as e:
+            return {"status":"FAILED","algo_ids":algo_ids,"error":str(e)}
 
     def _split_protection(self, asset, qty, stop_loss, take_profit_1, take_profit_2):
         """Build OKX attached protection.
@@ -245,10 +322,91 @@ class OKXDemoAdapter:
             "tp2_qty_contracts":float(q),
         }
 
-    def open_market(self, asset, action, notional_usd, leverage, stop_loss, take_profit_1, take_profit_2):
+    def open_fok(self, asset, action, notional_usd, leverage, stop_loss,
+                 take_profit_1, take_profit_2, limit_price, reference_price):
+        """Open only if the entire size fills inside the deterministic price cap.
+
+        OKX `fok` is a limit Fill-or-Kill order. It either fully fills at prices
+        no worse than `limit_price`, or opens no position.
+        """
         self.ensure_net_mode()
 
-        # Hard duplicate-position protection at the exchange adapter layer.
+        if config.ONE_POSITION_PER_ASSET and self.get_position(asset):
+            raise RuntimeError(f"ASSET_ALREADY_HAS_OPEN_POSITION:{asset}")
+
+        self.set_leverage(asset, leverage)
+        qty, _ = self.contracts_for_notional(asset, notional_usd)
+        side = "buy" if action == "LONG" else "sell"
+        px = self.normalize_entry_limit_price(asset, action, limit_price)
+
+        algos, protection = self._split_protection(
+            asset, qty, stop_loss, take_profit_1, take_profit_2
+        )
+
+        payload = {
+            "instId": self.inst_id(asset),
+            "tdMode": config.OKX_TD_MODE,
+            "side": side,
+            "ordType": "fok",
+            "px": px,
+            "sz": qty,
+        }
+        if algos:
+            payload["attachAlgoOrds"] = algos
+
+        r = self.private_post("/api/v5/trade/order", payload)
+        row = r.get("data", [])[0]
+        if row.get("sCode") not in (None, "", "0"):
+            raise RuntimeError(f"OKX_ORDER_REJECTED:{row}")
+
+        ord_id = row.get("ordId")
+        terminal = self.wait_terminal(asset, ord_id, timeout=15) or {}
+        state = terminal.get("state")
+        fill_sz = float(terminal.get("accFillSz") or 0)
+
+        if state != "filled" or fill_sz <= 0:
+            return {
+                "filled": False,
+                "order_id": ord_id,
+                "inst_id": self.inst_id(asset),
+                "side": action,
+                "requested_qty_contracts": float(qty),
+                "qty_contracts": fill_sz,
+                "entry": None,
+                "leverage": float(leverage),
+                "position_value_usd_approx": 0.0,
+                "protection": protection,
+                "order_state": state,
+                "reference_price": float(reference_price),
+                "limit_price": float(px),
+            }
+
+        avg_px=float(terminal.get("avgPx") or terminal.get("fillPx") or 0)
+        if avg_px <= 0:
+            raise RuntimeError(f"OKX_FILLED_WITHOUT_AVG_PX:{terminal}")
+
+        actual_notional=fill_sz*self.contract_usd_value(asset,avg_px)
+
+        return {
+            "filled": True,
+            "order_id": ord_id,
+            "inst_id": self.inst_id(asset),
+            "side": action,
+            "requested_qty_contracts": float(qty),
+            "qty_contracts": fill_sz,
+            "entry": avg_px,
+            "leverage": float(leverage),
+            "position_value_usd_approx": actual_notional,
+            "protection": protection,
+            "order_state": state,
+            "reference_price": float(reference_price),
+            "limit_price": float(px),
+        }
+
+    def open_market(self, asset, action, notional_usd, leverage, stop_loss, take_profit_1, take_profit_2):
+        """Legacy compatibility path. New ASTRA execution uses open_fok()."""
+        self.ensure_net_mode()
+
         if config.ONE_POSITION_PER_ASSET and self.get_position(asset):
             raise RuntimeError(f"ASSET_ALREADY_HAS_OPEN_POSITION:{asset}")
 
@@ -279,9 +437,10 @@ class OKXDemoAdapter:
         fill = self.wait_filled(asset, ord_id)
         avg_px = float((fill or {}).get("avgPx") or self.ticker(asset))
         fill_sz = float((fill or {}).get("accFillSz") or qty)
-        actual_notional = fill_sz * usd_per_contract
+        actual_notional = fill_sz * self.contract_usd_value(asset, avg_px)
 
         return {
+            "filled": True,
             "order_id": ord_id,
             "inst_id": self.inst_id(asset),
             "side": action,
@@ -290,6 +449,9 @@ class OKXDemoAdapter:
             "leverage": float(leverage),
             "position_value_usd_approx": actual_notional,
             "protection": protection,
+            "order_state": "filled",
+            "reference_price": avg_px,
+            "limit_price": None,
         }
 
     def positions(self, asset=None):

@@ -312,6 +312,18 @@ def okx_reference_market(inst):
 
 def okx_swap(inst):
     out={}
+    # Tradable perpetual reference used by ASTRA and the execution layer.
+    try:
+        x,_=get(OKX+"/api/v5/market/ticker",{"instId":inst})
+        d=x.get("data",[])
+        if d:
+            t=d[0]
+            out["last_price"]=float(t["last"]) if t.get("last") else None
+            out["bid_price"]=float(t["bidPx"]) if t.get("bidPx") else None
+            out["ask_price"]=float(t["askPx"]) if t.get("askPx") else None
+            out["timestamp_ms"]=int(t["ts"]) if t.get("ts") else None
+    except Exception as e:
+        out["ticker_error"]=str(e)
     try:
         x,_=get(OKX+"/api/v5/public/funding-rate",{"instId":inst})
         d=x.get("data",[])

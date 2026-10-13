@@ -142,12 +142,20 @@ def execute(decision):
             "chase_guard":chase,
         }
 
-    # We execute MARKET orders. Reject if ASTRA's planned entry drifted too far,
-    # then recalc risk/R:R from the current market reference price.
-    current_price=p.get("decision_context",{}).get("market",{}).get("spot",{}).get("price")
+    # Use the ACTUAL tradable OKX swap price for final risk/R:R sizing.
+    # The previous implementation used a spot/reference price, which could differ
+    # materially from the perpetual fill and silently degrade reward/risk.
+    market_ctx=p.get("decision_context",{}).get("market",{})
+    spot_price=market_ctx.get("spot",{}).get("price")
+    snapshot_swap_price=market_ctx.get("perp_okx",{}).get("last_price")
     try:
         planned=float(decision.get("entry"))
-        current=float(current_price)
+        if config.EXECUTION_MODE=="okx_demo":
+            current=float(OKXDemoAdapter().ticker(asset))
+            execution_price_source="OKX_SWAP_LIVE_TICKER"
+        else:
+            current=float(snapshot_swap_price or spot_price)
+            execution_price_source="SNAPSHOT_REFERENCE"
         drift=abs(current-planned)/current*100
     except Exception:
         return {"status":"REJECTED","reason":"ENTRY_PRICE_UNAVAILABLE"}
@@ -160,10 +168,15 @@ def execute(decision):
             "maximum_pct":config.ENTRY_DRIFT_MAX_PCT,
             "planned_entry":planned,
             "current_price":current,
+            "price_source":execution_price_source,
+            "spot_price":spot_price,
+            "snapshot_swap_price":snapshot_swap_price,
         }
 
     decision["planned_entry"]=planned
     decision["entry"]=current
+    decision["execution_reference_price"]=current
+    decision["execution_price_source"]=execution_price_source
     decision["mtf_quality"]=mtf.get("quality")
     decision["mtf_mode"]=mtf.get("mode") or "NORMAL"
     decision["mtf_gate"]=mtf
@@ -206,7 +219,10 @@ def execute(decision):
         "entry_quality_guard":chase,
         "mtf_gate":mtf,
         "planned_entry":planned,
+        "spot_reference_price":spot_price,
+        "snapshot_swap_reference_price":snapshot_swap_price,
         "execution_entry_reference":current,
+        "execution_price_source":execution_price_source,
         "entry_drift_pct":drift,
     }
 

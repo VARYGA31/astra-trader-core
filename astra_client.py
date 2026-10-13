@@ -30,6 +30,12 @@ Never size a position. Never choose position notional.
 Confidence is analytical confidence 0-100, NOT win probability.
 Leverage is ultimately chosen by the deterministic Risk Engine, not by you.
 
+ENTRY PRICE RULE:
+When market.perp_okx.last_price is available, use that OKX perpetual price as the
+tradable entry reference. Do not anchor entry to a spot price when the swap price differs.
+The Python execution layer will re-check the live OKX price and may cancel the trade if
+R:R or allowed fill quality deteriorates.
+
 Required JSON keys:
 asset, action, entry, stop_loss, take_profit_1, take_profit_2,
 confidence, data_quality, volatility_regime, setup_type, reason.

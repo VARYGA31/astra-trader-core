@@ -42,8 +42,8 @@ TELEGRAM_BOT_TOKEN=os.getenv("TELEGRAM_BOT_TOKEN","").strip()
 TELEGRAM_CHAT_ID=os.getenv("TELEGRAM_CHAT_ID","").strip()
 
 # Trade-quality / exchange-protection rules
-MIN_TP1_R = float(os.getenv("MIN_TP1_R", "1.0"))
-MIN_TP2_R = float(os.getenv("MIN_TP2_R", "1.8"))
+MIN_TP1_R = float(os.getenv("MIN_TP1_R", "1.2"))
+MIN_TP2_R = float(os.getenv("MIN_TP2_R", "2.0"))
 ONE_POSITION_PER_ASSET = os.getenv("ONE_POSITION_PER_ASSET", "true").lower() == "true"
 EXCHANGE_SIDE_TP_SL = os.getenv("EXCHANGE_SIDE_TP_SL", "true").lower() == "true"
 
@@ -136,3 +136,19 @@ MTF_TRANSITION_MIN_CONFIDENCE = float(os.getenv("MTF_TRANSITION_MIN_CONFIDENCE",
 MTF_TRANSITION_RISK_PCT = float(os.getenv("MTF_TRANSITION_RISK_PCT", "0.0030"))
 MTF_TRANSITION_MIN_TP1_R = float(os.getenv("MTF_TRANSITION_MIN_TP1_R", "1.20"))
 MTF_TRANSITION_MIN_TP2_R = float(os.getenv("MTF_TRANSITION_MIN_TP2_R", "2.00"))
+
+
+# ===== Execution Quality / Fill Protection =====
+# Entry orders use a price-bounded FOK limit instead of an unbounded market order.
+# If the full size cannot fill within the allowed price/R:R boundary, no trade is opened.
+EXECUTION_QUALITY_ENABLED = os.getenv("EXECUTION_QUALITY_ENABLED", "true").lower() == "true"
+OKX_ENTRY_ORDER_TYPE = os.getenv("OKX_ENTRY_ORDER_TYPE", "fok").strip().lower()
+
+# Maximum adverse entry slippage versus the live OKX swap reference immediately
+# before submission. These do NOT loosen R:R; both conditions must pass.
+CRYPTO_MAX_ENTRY_SLIPPAGE_PCT = float(os.getenv("CRYPTO_MAX_ENTRY_SLIPPAGE_PCT", "0.15"))
+GRAM_MAX_ENTRY_SLIPPAGE_PCT = float(os.getenv("GRAM_MAX_ENTRY_SLIPPAGE_PCT", "0.20"))
+XAU_MAX_ENTRY_SLIPPAGE_PCT = float(os.getenv("XAU_MAX_ENTRY_SLIPPAGE_PCT", "0.10"))
+
+# If an impossible post-fill audit failure is detected, flatten immediately.
+POST_FILL_FAILSAFE_CLOSE = os.getenv("POST_FILL_FAILSAFE_CLOSE", "true").lower() == "true"

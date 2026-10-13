@@ -1,57 +1,75 @@
-ASTRA MTF TRANSITION PATCH
+ASTRA EXECUTION QUALITY PATCH
 
 WHY
-Analytics after 312 decisions showed 283 MTF_NOT_ALIGNED skips, 12 model calls,
-12 ASTRA WAITs, and 0 opened trades. The bottleneck is before Risk Engine.
-This patch does NOT simply lower the normal quality threshold.
+The first post-MTF trade exposed a real execution-layer problem:
+the strategy plan could have good R:R, but the actual OKX perpetual fill could
+be materially worse than the planning/reference price.
+
+THIS PATCH DOES NOT CHANGE
+- NORMAL/TRANSITION signal rules
+- MTF thresholds
+- confidence thresholds
+- risk tiers
+- leverage rules
+- news logic
+- anti-chase
+- TP/SL/breakeven behavior
 
 WHAT CHANGES
-- NORMAL mode remains unchanged.
-- New TRANSITION mode for BTC / ETH / GRAM only.
-- XAU remains strict and cannot use transition mode.
+1) ASTRA receives OKX perpetual last_price and is instructed to use it for entry.
+2) Immediately before Risk Engine execution, trade_cycle reads the LIVE OKX swap ticker.
+3) Risk Engine sizes from that tradable price instead of a spot price.
+4) Before sending an order, execution_router rechecks R:R at the latest OKX price.
+5) Entry becomes a price-bounded FOK limit:
+   - full size fills inside our safe boundary, OR
+   - zero trade.
+   No unsafe market fallback.
+6) The FOK limit is the stricter of:
+   - allowed adverse slippage, and
+   - the worst price that still preserves minimum TP1/TP2 R:R.
+7) After fill, actual avgPx is audited again.
+8) Journal / analytics now record planned entry, pre-order OKX reference,
+   FOK limit, actual fill, slippage, planned R:R and actual R:R.
 
-TRANSITION REQUIREMENTS
-- 4H trend must be MIXED, never clearly opposite.
-- 4H structure/momentum cannot be explicitly opposite.
-- At least one 4H component must support the direction.
-- 1H setup must already be confirmed.
-- 15M trigger must be strong: at least 4 components.
-- MTF quality >= 60.
-- Existing anti-chase must pass.
-- ASTRA confidence >= 90.
-- TP1 >= 1.2R and TP2 >= 2.0R.
-- Transition risk budget is only 0.30% of equity by default.
-- Existing daily-loss, drawdown, exposure, correlation, cooldown, news, SL/TP,
-  breakeven and portfolio guards remain unchanged.
+DEFAULT ENTRY CAPS
+BTC/ETH: 0.15% max adverse slippage
+GRAM:    0.20%
+XAU:     0.10%
 
-SAFE VARIABLES
-MTF_TRANSITION_ENABLED=true
-MTF_TRANSITION_MIN_QUALITY=60
-MTF_TRANSITION_TRIGGER_MIN_COMPONENTS=4
-MTF_TRANSITION_MIN_CONFIDENCE=90
-MTF_TRANSITION_RISK_PCT=0.0030
-MTF_TRANSITION_MIN_TP1_R=1.20
-MTF_TRANSITION_MIN_TP2_R=2.00
+IMPORTANT
+A canceled FOK is a GOOD outcome when price/liquidity is no longer acceptable.
+The bot will report ENTRY_FOK_NOT_FILLED and wait for another setup.
 
-INSTALL
+RAILWAY VARIABLES
+MIN_TP1_R=1.20
+MIN_TP2_R=2.00
+EXECUTION_QUALITY_ENABLED=true
+OKX_ENTRY_ORDER_TYPE=fok
+CRYPTO_MAX_ENTRY_SLIPPAGE_PCT=0.15
+GRAM_MAX_ENTRY_SLIPPAGE_PCT=0.20
+XAU_MAX_ENTRY_SLIPPAGE_PCT=0.10
+POST_FILL_FAILSAFE_CLOSE=true
+
+SAFE INSTALL
 1) Set AUTO_DECISION=false.
-2) Upload/replace every file from this ZIP.
-3) Temporary Railway Start Command:
-   python repo_selfcheck.py && python test_transition_mode.py && python worker.py
-4) Redeploy.
-5) Expected:
-   repo_selfcheck -> status OK
-   test_transition_mode -> status OK
-   will_open_order -> false
-   will_close_order -> false
-   will_call_model -> false
-   transition_gate.mode -> TRANSITION
-   opposite_4h_blocked -> true
-   xau_transition_disabled -> true
-6) Return Start Command to: python worker.py
-7) Open /health, confirm status=ok and last_error=null.
-8) Then set AUTO_DECISION=true.
+2) Upload/replace all files in this ZIP.
+3) Add the variables above (defaults are already safe if omitted).
+4) Temporary Start Command:
+   python repo_selfcheck.py && python test_execution_quality.py && python worker.py
+5) Redeploy.
+6) Expected:
+   status: OK
+   will_open_order: false
+   will_close_order: false
+   will_call_model: false
+   bad_fill_rejected: true
+   good_reference_passed: true
+   limit_fill_passed: true
+   worse_fill_rejected: true
+7) Open /health and confirm status=ok, last_error=null.
+8) Return Start Command:
+   python worker.py
+9) Re-enable AUTO_DECISION=true.
 
-OBSERVABILITY
-Existing /analytics is preserved. New decision rows include mtf_mode=TRANSITION or NORMAL.
-This lets us compare the new mode separately instead of guessing.
+NOTE
+This patch deliberately prefers "no fill" over a lower-quality fill.
