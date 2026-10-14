@@ -132,18 +132,16 @@ def _execution_reason(execution):
     return None
 
 def _compact_candidates(mtf):
-    out = []
-    for c in (mtf or {}).get("candidates", []) or []:
-        trig = c.get("trigger_15m") or {}
+    out=[]
+    for c in (mtf or {}).get("candidates",[]) or []:
+        trig15=c.get("trigger_15m") or {}
+        trig5=c.get("trigger_5m") or {}
         out.append({
-            "direction": c.get("direction"),
-            "passed": bool(c.get("passed")),
-            "mode": c.get("mode"),
-            "quality": c.get("quality"),
-            "regime_4h_ok": c.get("regime_4h_ok"),
-            "setup_1h_ok": c.get("setup_1h_ok"),
-            "trigger_15m_confirmed": trig.get("confirmed"),
-            "trigger_15m_count": trig.get("count"),
+            "direction":c.get("direction"),"passed":bool(c.get("passed")),"mode":c.get("mode"),"quality":c.get("quality"),
+            "regime_4h_ok":c.get("regime_4h_ok"),"setup_1h_ok":c.get("setup_1h_ok"),
+            "trigger_15m_confirmed":trig15.get("confirmed"),"trigger_15m_count":trig15.get("count"),
+            "regime_1h_ok":c.get("regime_1h_ok"),"setup_15m_ok":c.get("setup_15m_ok"),
+            "trigger_5m_confirmed":trig5.get("confirmed"),"trigger_5m_count":trig5.get("count"),
         })
     return out
 
@@ -212,6 +210,7 @@ def record_decision(package, gate, decision, execution, model_called=False):
         row = {
             "timestamp_utc": now_iso(),
             "asset": asset,
+            "strategy_mode":str((package or {}).get("strategy_mode") or (decision or {}).get("strategy_mode") or "NORMAL").upper(),
             "model_called": bool(model_called),
             "gate_reason": gate_reason,
             "allowed_direction": gate.get("allowed_direction") or mtf.get("direction"),
@@ -278,6 +277,7 @@ def record_decision(package, gate, decision, execution, model_called=False):
             s["last_approved_trade"] = {
                 "timestamp_utc": row["timestamp_utc"],
                 "asset": asset,
+                "strategy_mode":row.get("strategy_mode"),
                 "action": action,
                 "confidence": decision.get("confidence"),
                 "setup_type": decision.get("setup_type"),
@@ -322,6 +322,7 @@ def record_decision(package, gate, decision, execution, model_called=False):
                 shadow = {
                     "timestamp_utc": row["timestamp_utc"],
                     "asset": asset,
+                    "strategy_mode":row.get("strategy_mode"),
                     "price": row["market"].get("price"),
                     "direction": best.get("direction"),
                     "quality": best.get("quality"),
@@ -331,6 +332,10 @@ def record_decision(package, gate, decision, execution, model_called=False):
                     "setup_1h_ok": best.get("setup_1h_ok"),
                     "trigger_15m_confirmed": best.get("trigger_15m_confirmed"),
                     "trigger_15m_count": best.get("trigger_15m_count"),
+                    "regime_1h_ok": best.get("regime_1h_ok"),
+                    "setup_15m_ok": best.get("setup_15m_ok"),
+                    "trigger_5m_confirmed": best.get("trigger_5m_confirmed"),
+                    "trigger_5m_count": best.get("trigger_5m_count"),
                     "blocked_reason": gate_reason if not model_called else (exec_reason or decision.get("reason") or exec_status),
                     "model_called": bool(model_called),
                     "model_action": action if model_called else None,
@@ -456,6 +461,7 @@ def trade_performance(since_utc=None):
         "by_asset": _group_metrics(closes, lambda e:e.get("asset")),
         "by_direction": _group_metrics(closes, lambda e:e.get("side")),
         "by_setup_type": _group_metrics(closes, lambda e:e.get("setup_type")),
+        "by_strategy_mode": _group_metrics(closes, lambda e:e.get("strategy_mode") or "NORMAL"),
     }
 
 def _decision_funnel(since_utc=None):
@@ -469,6 +475,7 @@ def _decision_funnel(since_utc=None):
     by_asset=defaultdict(lambda:{
         "decisions":0,"model_calls":0,"model_skips":0,"model_waits":0,"opened":0
     })
+    by_mode=defaultdict(lambda:{"decisions":0,"model_calls":0,"model_skips":0,"model_waits":0,"opened":0})
     model_calls=0
     model_skips=0
     model_waits=0
@@ -478,24 +485,25 @@ def _decision_funnel(since_utc=None):
 
     for x in rows:
         asset=x.get("asset","UNKNOWN")
-        a=by_asset[asset]
-        a["decisions"]+=1
+        mode=str(x.get("strategy_mode") or "NORMAL").upper()
+        a=by_asset[asset]; m=by_mode[mode]
+        a["decisions"]+=1; m["decisions"]+=1
         if x.get("model_called"):
-            model_calls+=1;a["model_calls"]+=1
+            model_calls+=1;a["model_calls"]+=1;m["model_calls"]+=1
             md=x.get("model_decision") or {}
             if str(md.get("action","")).upper()=="WAIT":
-                model_waits+=1;a["model_waits"]+=1
+                model_waits+=1;a["model_waits"]+=1;m["model_waits"]+=1
                 cat=str(md.get("wait_category") or "UNCLASSIFIED_LEGACY")
                 wait_categories[cat]+=1
                 wait_hardness["HARD" if bool(md.get("wait_is_hard_blocker")) else "SOFT_OR_UNSPECIFIED"]+=1
         else:
-            model_skips+=1;a["model_skips"]+=1
+            model_skips+=1;a["model_skips"]+=1;m["model_skips"]+=1
             skips[str(x.get("gate_reason") or "UNKNOWN_SKIP")]+=1
 
         ex=x.get("execution") or {}
         status=ex.get("status")
         if status in {"OKX_DEMO_OPENED","PAPER_OPENED","PAPER_POSITION_OPENED","OPENED"}:
-            opened+=1;a["opened"]+=1
+            opened+=1;a["opened"]+=1;m["opened"]+=1
         elif x.get("model_called") and str((x.get("model_decision") or {}).get("action","")).upper() in {"LONG","SHORT"}:
             rejects[str(ex.get("reason") or status or "UNKNOWN_REJECTION")]+=1
 
@@ -511,6 +519,7 @@ def _decision_funnel(since_utc=None):
         "skip_reasons":dict(sorted(skips.items(),key=lambda kv:(-kv[1],kv[0]))),
         "trade_rejection_reasons":dict(sorted(rejects.items(),key=lambda kv:(-kv[1],kv[0]))),
         "by_asset":dict(by_asset),
+        "by_strategy_mode":dict(by_mode),
     }
 
 def recent_shadow(limit=None):

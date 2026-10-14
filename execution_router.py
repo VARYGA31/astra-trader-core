@@ -20,6 +20,7 @@ def open_trade(decision, risk):
     asset = decision["asset"]
     action = str(decision.get("action","")).upper()
     mtf_mode = str(decision.get("mtf_mode") or "NORMAL").upper()
+    strategy_mode = str(decision.get("strategy_mode") or ("SCALP" if mtf_mode=="SCALP" else "NORMAL")).upper()
 
     # FINAL exchange-side portfolio guard immediately before order submission.
     summary = adapter.exchange_active_summary()
@@ -223,6 +224,7 @@ def open_trade(decision, risk):
         "tp1_qty_contracts":protection.get("tp1_qty_contracts"),
         "tp2_qty_contracts":protection.get("tp2_qty_contracts"),
         "mode":"OKX DEMO",
+        "strategy_mode":strategy_mode,
         "confidence":decision.get("confidence"),
         "decision_reason":decision.get("reason"),
         "data_quality":decision.get("data_quality"),

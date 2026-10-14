@@ -40,29 +40,38 @@ def _claim_event(event_id):
     tmp.replace(DEDUPE)
     return True
 
-def send_text(text):
+def send_text(text, reply_markup=None):
     if not config.TELEGRAM_ENABLED:
         return {"status":"DISABLED"}
     if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_CHAT_ID:
         return {"status":"FAILED","reason":"TELEGRAM_CREDENTIALS_MISSING"}
     url = f"{API}/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage"
     try:
-        r = requests.post(url, json={
+        payload={
             "chat_id": config.TELEGRAM_CHAT_ID,
             "text": text,
             "parse_mode": "HTML",
             "disable_web_page_preview": True,
-        }, timeout=12)
+        }
+        if reply_markup is not None:
+            payload["reply_markup"]=reply_markup
+        r = requests.post(url, json=payload, timeout=12)
         data = r.json()
         return {"status":"OK" if data.get("ok") else "FAILED","response":data}
     except Exception as e:
         return {"status":"FAILED","reason":str(e)}
 
+def _strategy_header(trade):
+    mode=str(trade.get("strategy_mode") or "NORMAL").upper()
+    if mode=="SCALP":
+        return "⚡ <b>ASTRA SCALP</b>"
+    return "🟦 <b>ASTRA NORMAL</b>"
+
 def notify_open(trade):
     side = str(trade.get("side","")).upper()
     icon = "🟢" if side in {"LONG","BUY"} else "🔴"
     text = (
-        f"{icon} <b>ASTRA — ПОЗИЦИЯ ОТКРЫТА</b>\n\n"
+        f"{icon} {_strategy_header(trade)} — <b>ПОЗИЦИЯ ОТКРЫТА</b>\n\n"
         f"Монета: <b>{html.escape(str(trade.get('asset','—')))}</b>\n"
         f"Направление: <b>{html.escape(side)}</b>\n"
         f"Таймфрейм: <b>{html.escape(str(trade.get('timeframe',config.TRADING_TIMEFRAME)))}</b>\n"
@@ -83,7 +92,7 @@ def notify_partial(trade):
     if event_id and not _claim_event("PARTIAL:"+str(event_id)):
         return {"status":"DUPLICATE_SUPPRESSED"}
     text = (
-        f"🟡 <b>ASTRA — ЧАСТИЧНОЕ ЗАКРЫТИЕ</b>\n\n"
+        f"🟡 {_strategy_header(trade)} — <b>ЧАСТИЧНОЕ ЗАКРЫТИЕ</b>\n\n"
         f"Монета: <b>{html.escape(str(trade.get('asset','—')))}</b>\n"
         f"Причина: <b>{html.escape(str(trade.get('reason','TP1')))}</b>\n"
         f"Цена: <b>{_fmt_num(trade.get('exit_price'))}</b>\n"
@@ -100,7 +109,7 @@ def notify_close(trade):
     pnl = trade.get("pnl_usd")
     pnl_icon = "✅" if (pnl is not None and float(pnl) >= 0) else "❌"
     text = (
-        f"{pnl_icon} <b>ASTRA — ПОЗИЦИЯ ЗАКРЫТА</b>\n\n"
+        f"{pnl_icon} {_strategy_header(trade)} — <b>ПОЗИЦИЯ ЗАКРЫТА</b>\n\n"
         f"Монета: <b>{html.escape(str(trade.get('asset','—')))}</b>\n"
         f"Направление: <b>{html.escape(str(trade.get('side','—')))}</b>\n"
         f"Таймфрейм: <b>{html.escape(str(trade.get('timeframe',config.TRADING_TIMEFRAME)))}</b>\n"

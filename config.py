@@ -152,3 +152,52 @@ XAU_MAX_ENTRY_SLIPPAGE_PCT = float(os.getenv("XAU_MAX_ENTRY_SLIPPAGE_PCT", "0.10
 
 # If an impossible post-fill audit failure is detected, flatten immediately.
 POST_FILL_FAILSAFE_CLOSE = os.getenv("POST_FILL_FAILSAFE_CLOSE", "true").lower() == "true"
+
+
+# ===== Strategy Mode Controller / Telegram =====
+# Runtime mode is persisted under STATE_DIR and can be changed from the authorized Telegram chat.
+# NORMAL = existing 4H -> 1H -> 15M ASTRA strategy.
+# SCALP  = separate 1H -> 15M -> 5M strategy.
+# PAUSED = no new entries; position monitoring / protective exits continue.
+DEFAULT_STRATEGY_MODE = os.getenv("DEFAULT_STRATEGY_MODE", "NORMAL").strip().upper()
+TELEGRAM_CONTROL_ENABLED = os.getenv("TELEGRAM_CONTROL_ENABLED", "true").lower() == "true"
+TELEGRAM_CONTROL_POLL_TIMEOUT = int(os.getenv("TELEGRAM_CONTROL_POLL_TIMEOUT", "20"))
+
+# ===== ASTRA SCALP v1 =====
+# First version is crypto-only. XAU remains available in NORMAL mode.
+SCALP_ALLOWED_ASSETS = tuple(
+    x.strip().upper() for x in os.getenv("SCALP_ALLOWED_ASSETS", "BTC,ETH,GRAM").split(",") if x.strip()
+)
+SCALP_DECISION_INTERVAL_SECONDS = int(os.getenv("SCALP_DECISION_INTERVAL_SECONDS", "60"))
+SCALP_MIN_QUALITY = float(os.getenv("SCALP_MIN_QUALITY", "70"))
+SCALP_TRIGGER_MIN_COMPONENTS = int(os.getenv("SCALP_TRIGGER_MIN_COMPONENTS", "4"))
+SCALP_MIN_TRADE_CONFIDENCE = float(os.getenv("SCALP_MIN_TRADE_CONFIDENCE", "82"))
+SCALP_NEWS_SETTLE_MINUTES = int(os.getenv("SCALP_NEWS_SETTLE_MINUTES", "10"))
+SCALP_MAX_SPREAD_PCT = float(os.getenv("SCALP_MAX_SPREAD_PCT", "0.10"))
+SCALP_MIN_ATR_PCT = float(os.getenv("SCALP_MIN_ATR_PCT", "0.08"))
+SCALP_MAX_ATR_PCT = float(os.getenv("SCALP_MAX_ATR_PCT", "1.25"))
+SCALP_VOLUME_MIN_RATIO = float(os.getenv("SCALP_VOLUME_MIN_RATIO", "0.75"))
+SCALP_SHORT_CHASE_RSI = float(os.getenv("SCALP_SHORT_CHASE_RSI", "25"))
+SCALP_LONG_CHASE_RSI = float(os.getenv("SCALP_LONG_CHASE_RSI", "75"))
+SCALP_CHASE_IMPULSE_ATR_MULT = float(os.getenv("SCALP_CHASE_IMPULSE_ATR_MULT", "2.20"))
+
+# Short-horizon target requirements. Still enforced again after the actual fill.
+SCALP_MIN_TP1_R = float(os.getenv("SCALP_MIN_TP1_R", "1.0"))
+SCALP_MIN_TP2_R = float(os.getenv("SCALP_MIN_TP2_R", "1.6"))
+SCALP_MIN_STOP_PCT = float(os.getenv("SCALP_MIN_STOP_PCT", "0.08"))
+SCALP_MAX_STOP_PCT = float(os.getenv("SCALP_MAX_STOP_PCT", "1.00"))
+
+# Risk remains stop-based. Leverage changes margin usage, not the loss budget.
+SCALP_RISK_PCT_82_86 = float(os.getenv("SCALP_RISK_PCT_82_86", "0.0035"))
+SCALP_RISK_PCT_87_91 = float(os.getenv("SCALP_RISK_PCT_87_91", "0.0050"))
+SCALP_RISK_PCT_92_PLUS = float(os.getenv("SCALP_RISK_PCT_92_PLUS", "0.0075"))
+SCALP_HARD_RISK_PCT = float(os.getenv("SCALP_HARD_RISK_PCT", "0.0075"))
+SCALP_LEVERAGE_HIGH_VOL = float(os.getenv("SCALP_LEVERAGE_HIGH_VOL", "3"))
+SCALP_LEVERAGE_NORMAL = float(os.getenv("SCALP_LEVERAGE_NORMAL", "5"))
+SCALP_LEVERAGE_BEST_SETUP = float(os.getenv("SCALP_LEVERAGE_BEST_SETUP", "7"))
+SCALP_MAX_LEVERAGE = float(os.getenv("SCALP_MAX_LEVERAGE", "7"))
+SCALP_BEST_SETUP_MIN_QUALITY = float(os.getenv("SCALP_BEST_SETUP_MIN_QUALITY", "90"))
+SCALP_BEST_SETUP_MIN_CONFIDENCE = float(os.getenv("SCALP_BEST_SETUP_MIN_CONFIDENCE", "92"))
+SCALP_STOP_LOSS_COOLDOWN_SECONDS = int(os.getenv("SCALP_STOP_LOSS_COOLDOWN_SECONDS", "900"))
+SCALP_LOSS_STREAK_LIMIT = int(os.getenv("SCALP_LOSS_STREAK_LIMIT", "3"))
+SCALP_LOSS_STREAK_PAUSE_SECONDS = int(os.getenv("SCALP_LOSS_STREAK_PAUSE_SECONDS", "3600"))

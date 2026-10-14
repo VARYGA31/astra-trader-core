@@ -200,7 +200,8 @@ def check_once():
             trade_journal.append_event({"event":"OKX_POSITION_CLOSED", **message})
             demo_ledger.apply_closed_trade(pnl)
             if reason == "STOP_LOSS":
-                cooldown.set_cooldown(asset, seconds=config.STOP_LOSS_COOLDOWN_SECONDS, reason=reason)
+                stop_cd=(config.SCALP_STOP_LOSS_COOLDOWN_SECONDS if str(rec.get("strategy_mode") or "NORMAL").upper()=="SCALP" else config.STOP_LOSS_COOLDOWN_SECONDS)
+                cooldown.set_cooldown(asset, seconds=stop_cd, reason=reason)
             elif str(reason).startswith("EMERGENCY_"):
                 cooldown.set_cooldown(asset, seconds=config.EMERGENCY_EXIT_COOLDOWN_SECONDS, reason=reason)
             else:

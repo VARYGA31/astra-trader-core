@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+"""Authorized Telegram control for ASTRA strategy mode.
+
+The controller never places orders itself. It only changes the persisted active
+mode. Switching NORMAL <-> SCALP is refused while an OKX position is open.
+PAUSED is always allowed and stops only new entries.
+"""
+import json,time
+from pathlib import Path
+import requests
+import config,strategy_mode,telegram_notifier,demo_ledger
+from okx_demo_adapter import OKXDemoAdapter
+
+API="https://api.telegram.org"
+OFFSET_FILE=Path(config.STATE_DIR)/"telegram_control_offset.json"
+STATE={"status":"STARTING","last_error":None,"last_command":None,"last_update_id":None}
+
+def keyboard():
+    return {
+        "keyboard":[
+            [{"text":"🟦 NORMAL"},{"text":"⚡ SCALP"}],
+            [{"text":"⏸ PAUSE"},{"text":"📊 STATUS"}],
+        ],
+        "resize_keyboard":True,
+        "is_persistent":True,
+    }
+
+def parse_mode_command(text):
+    t=str(text or "").strip().upper()
+    mapping={
+        "/NORMAL":"NORMAL","/MODE_NORMAL":"NORMAL","🟦 NORMAL":"NORMAL","NORMAL":"NORMAL",
+        "/SCALP":"SCALP","/MODE_SCALP":"SCALP","⚡ SCALP":"SCALP","SCALP":"SCALP",
+        "/PAUSE":"PAUSED","⏸ PAUSE":"PAUSED","PAUSE":"PAUSED","PAUSED":"PAUSED",
+    }
+    return mapping.get(t)
+
+def _authorized(chat_id):
+    return str(chat_id)==str(config.TELEGRAM_CHAT_ID)
+
+def _summary():
+    mode=strategy_mode.get_mode()
+    try: ex=OKXDemoAdapter().exchange_active_summary()
+    except Exception as e: ex={"open_positions":None,"error":str(e)}
+    try: ledger=demo_ledger.status()
+    except Exception: ledger={}
+    auto="ON" if config.AUTO_DECISION else "OFF"
+    icon="⚡" if mode=="SCALP" else "🟦" if mode=="NORMAL" else "⏸"
+    return (
+        f"🎛 <b>ASTRA CONTROL</b>\n\n"
+        f"Активный режим: {icon} <b>{mode}</b>\n"
+        f"AUTO_DECISION: <b>{auto}</b>\n"
+        f"Execution: <b>{config.EXECUTION_MODE}</b>\n"
+        f"Открытых позиций: <b>{ex.get('open_positions','—')}</b>\n"
+        f"Demo equity: <b>${float(ledger.get('equity') or 0):.2f}</b>\n\n"
+        f"🟦 NORMAL: 4H → 1H → 15M\n"
+        f"⚡ SCALP: 1H → 15M → 5M (BTC/ETH/GRAM)\n"
+        f"⏸ PAUSE: новые входы выключены, защита открытой позиции продолжает работать."
+    )
+
+def _send(text):
+    return telegram_notifier.send_text(text,reply_markup=keyboard())
+
+def _switch(target,source="TELEGRAM"):
+    # Share one in-process lock with execution. If an order is currently being
+    # submitted, mode switching waits until the result is known; then the open
+    # position guard decides whether switching is safe.
+    with strategy_mode.RUNTIME_LOCK:
+        current=strategy_mode.get_mode()
+        try:
+            ex=OKXDemoAdapter().exchange_active_summary()
+            open_positions=int(ex.get("open_positions",0))
+        except Exception as e:
+            return _send(f"⚠️ Не могу безопасно сменить режим: не удалось проверить позиции OKX.\n<code>{str(e)}</code>")
+        chk=strategy_mode.switch_check(current,target,open_positions)
+        if not chk.get("allowed"):
+            if chk.get("reason")=="OPEN_POSITION_EXISTS":
+                return _send(
+                    f"⚠️ Переключение <b>{current} → {target}</b> отклонено.\n"
+                    f"Сначала должна закрыться текущая позиция OKX.\n"
+                    f"Можно нажать ⏸ PAUSE — мониторинг/SL/TP останутся активны."
+                )
+            return _send(f"⚠️ Режим не изменён: {chk.get('reason')}")
+        strategy_mode.set_mode(target,changed_by=source)
+        icon="⚡" if target=="SCALP" else "🟦" if target=="NORMAL" else "⏸"
+        return _send(f"{icon} <b>ASTRA {target} ACTIVATED</b>\n\nРежим сохранён в /data и переживёт Redeploy.")
+
+def handle_update(update):
+    msg=update.get("message") or {}
+    chat=msg.get("chat") or {}
+    chat_id=chat.get("id")
+    if not _authorized(chat_id):
+        return {"status":"IGNORED_UNAUTHORIZED"}
+    text=str(msg.get("text") or "").strip()
+    STATE["last_command"]=text
+    if text.lower() in {"/start","/mode","/help"} or text.upper()=="🎛 MODE":
+        _send(_summary()); return {"status":"OK","action":"STATUS"}
+    if text.lower()=="/status" or text.upper()=="📊 STATUS":
+        _send(_summary()); return {"status":"OK","action":"STATUS"}
+    target=parse_mode_command(text)
+    if target:
+        _switch(target); return {"status":"OK","action":"SWITCH","target":target}
+    _send("Команды: /normal, /scalp, /pause, /status, /mode")
+    return {"status":"OK","action":"HELP"}
+
+def _load_offset():
+    try:return int(json.loads(OFFSET_FILE.read_text(encoding="utf-8")).get("offset"))
+    except Exception:return None
+
+def _save_offset(offset):
+    OFFSET_FILE.parent.mkdir(parents=True,exist_ok=True)
+    tmp=OFFSET_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"offset":int(offset)}),encoding="utf-8")
+    tmp.replace(OFFSET_FILE)
+
+def _get_updates(offset=None,timeout=0):
+    url=f"{API}/bot{config.TELEGRAM_BOT_TOKEN}/getUpdates"
+    params={"timeout":int(timeout),"allowed_updates":json.dumps(["message"])}
+    if offset is not None: params["offset"]=int(offset)
+    r=requests.get(url,params=params,timeout=max(10,int(timeout)+8))
+    r.raise_for_status()
+    d=r.json()
+    if not d.get("ok"): raise RuntimeError(str(d))
+    return d.get("result",[])
+
+def run_forever():
+    if not config.TELEGRAM_CONTROL_ENABLED:
+        STATE.update({"status":"DISABLED","last_error":None}); return
+    if not (config.TELEGRAM_ENABLED and config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_CHAT_ID):
+        STATE.update({"status":"DISABLED","last_error":"TELEGRAM_NOT_CONFIGURED"}); return
+    offset=_load_offset()
+    try:
+        if offset is None:
+            # On first install skip historical pending commands so an old /scalp
+            # cannot unexpectedly switch the bot after deployment.
+            old=_get_updates(None,0)
+            if old:
+                offset=max(int(x.get("update_id",0)) for x in old)+1
+                _save_offset(offset)
+        STATE.update({"status":"OK","last_error":None})
+        _send("🎛 <b>ASTRA Telegram control online</b>\n\n"+_summary())
+    except Exception as e:
+        STATE.update({"status":"DEGRADED","last_error":str(e)})
+
+    while True:
+        try:
+            rows=_get_updates(offset,config.TELEGRAM_CONTROL_POLL_TIMEOUT)
+            for u in rows:
+                uid=int(u.get("update_id",0))
+                handle_update(u)
+                offset=uid+1
+                STATE["last_update_id"]=uid
+                _save_offset(offset)
+            STATE.update({"status":"OK","last_error":None})
+        except Exception as e:
+            STATE.update({"status":"DEGRADED","last_error":str(e)})
+            time.sleep(5)

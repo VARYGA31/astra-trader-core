@@ -24,8 +24,30 @@ def _risk_pct(confidence,mtf_quality,dd_mult):
         base=config.RISK_PCT_92_PLUS
     return min(base*dd_mult,config.HARD_RISK_PCT),quality
 
-def _leverage(asset, volatility, quality, confidence, stop_dist_pct):
+def _scalp_risk_pct(confidence,mtf_quality,dd_mult):
+    quality=min(float(confidence),float(mtf_quality))
+    if quality < config.SCALP_MIN_TRADE_CONFIDENCE:
+        return None,quality
+    if quality < 87:
+        base=config.SCALP_RISK_PCT_82_86
+    elif quality < 92:
+        base=config.SCALP_RISK_PCT_87_91
+    else:
+        base=config.SCALP_RISK_PCT_92_PLUS
+    return min(base*dd_mult,config.SCALP_HARD_RISK_PCT),quality
+
+def _leverage(asset, volatility, quality, confidence, stop_dist_pct, strategy_mode="NORMAL"):
     v=str(volatility or "NORMAL").upper()
+    strategy_mode=str(strategy_mode or "NORMAL").upper()
+
+    if strategy_mode=="SCALP":
+        if v in {"ELEVATED","HIGH","EXTREME"}:
+            lev=config.SCALP_LEVERAGE_HIGH_VOL
+        elif quality>=config.SCALP_BEST_SETUP_MIN_QUALITY and confidence>=config.SCALP_BEST_SETUP_MIN_CONFIDENCE:
+            lev=config.SCALP_LEVERAGE_BEST_SETUP
+        else:
+            lev=config.SCALP_LEVERAGE_NORMAL
+        return min(max(float(lev),1.0),float(config.SCALP_MAX_LEVERAGE))
 
     if asset=="XAU":
         # User-requested 5x..10x range for gold only.
@@ -71,9 +93,18 @@ def evaluate(d):
     confidence=float(d.get("confidence",0) or 0)
     mtf_quality=float(d.get("mtf_quality",0) or 0)
     mtf_mode=str(d.get("mtf_mode") or d.get("mtf_gate",{}).get("mode") or "NORMAL").upper()
+    strategy_mode=str(d.get("strategy_mode") or ("SCALP" if mtf_mode=="SCALP" else "NORMAL")).upper()
+    is_scalp=(strategy_mode=="SCALP" or mtf_mode=="SCALP")
     is_transition=(mtf_mode=="TRANSITION")
 
-    if is_transition:
+    if is_scalp:
+        if asset not in set(config.SCALP_ALLOWED_ASSETS):
+            return reject("SCALP_ASSET_NOT_ALLOWED")
+        if confidence<config.SCALP_MIN_TRADE_CONFIDENCE:
+            return reject("SCALP_CONFIDENCE_TOO_LOW",{"confidence":confidence,"minimum":config.SCALP_MIN_TRADE_CONFIDENCE})
+        if mtf_quality<config.SCALP_MIN_QUALITY:
+            return reject("SCALP_QUALITY_TOO_LOW",{"mtf_quality":mtf_quality,"minimum":config.SCALP_MIN_QUALITY})
+    elif is_transition:
         # Transition mode is crypto-only and deliberately stricter on model
         # confidence while using a smaller deterministic risk budget.
         if asset=="XAU":
@@ -108,8 +139,11 @@ def evaluate(d):
             return reject("INVALID_LEVELS_FOR_SHORT")
 
     rr1=_rr(entry,stop,tp1); rr2=_rr(entry,stop,tp2)
-    min_tp1=max(config.MIN_TP1_R,config.MTF_TRANSITION_MIN_TP1_R) if is_transition else config.MIN_TP1_R
-    min_tp2=max(config.MIN_TP2_R,config.MTF_TRANSITION_MIN_TP2_R) if is_transition else config.MIN_TP2_R
+    if is_scalp:
+        min_tp1=config.SCALP_MIN_TP1_R; min_tp2=config.SCALP_MIN_TP2_R
+    else:
+        min_tp1=max(config.MIN_TP1_R,config.MTF_TRANSITION_MIN_TP1_R) if is_transition else config.MIN_TP1_R
+        min_tp2=max(config.MIN_TP2_R,config.MTF_TRANSITION_MIN_TP2_R) if is_transition else config.MIN_TP2_R
     if rr1<min_tp1:
         return reject("TP1_REWARD_RISK_TOO_LOW",{"tp1_r":rr1,"minimum":min_tp1,"mtf_mode":mtf_mode})
     if rr2<min_tp2:
@@ -129,8 +163,18 @@ def evaluate(d):
     dd_mult=.25 if dd>=.20 else .5 if dd>=.15 else .75 if dd>=.10 else 1.0
     stop_dist_pct=abs(entry-stop)/entry
     if stop_dist_pct<=0:return reject("INVALID_STOP_DISTANCE")
+    if is_scalp:
+        stop_pct=stop_dist_pct*100
+        if stop_pct<config.SCALP_MIN_STOP_PCT:
+            return reject("SCALP_STOP_TOO_TIGHT",{"stop_pct":stop_pct,"minimum":config.SCALP_MIN_STOP_PCT})
+        if stop_pct>config.SCALP_MAX_STOP_PCT:
+            return reject("SCALP_STOP_TOO_WIDE",{"stop_pct":stop_pct,"maximum":config.SCALP_MAX_STOP_PCT})
 
-    if is_transition:
+    if is_scalp:
+        risk_pct,quality=_scalp_risk_pct(confidence,mtf_quality,dd_mult)
+        if risk_pct is None:
+            return reject("SCALP_TRADE_QUALITY_TOO_LOW",{"quality":quality})
+    elif is_transition:
         quality=min(confidence,mtf_quality)
         risk_pct=min(config.MTF_TRANSITION_RISK_PCT*dd_mult,config.HARD_RISK_PCT)
     else:
@@ -139,7 +183,7 @@ def evaluate(d):
             return reject("TRADE_QUALITY_TOO_LOW",{"quality":quality})
 
     risk_usd=eq*risk_pct
-    leverage=_leverage(asset,d.get("volatility_regime"),quality,confidence,stop_dist_pct)
+    leverage=_leverage(asset,d.get("volatility_regime"),quality,confidence,stop_dist_pct,strategy_mode=strategy_mode)
 
     # Notional is always risk-budgeted. Higher leverage does NOT increase risk budget.
     notional=min(
@@ -166,6 +210,7 @@ def evaluate(d):
         "confidence":confidence,
         "mtf_quality":mtf_quality,
         "mtf_mode":mtf_mode,
+        "strategy_mode":strategy_mode,
         "trade_quality":quality,
         "risk_pct_budget":risk_pct,
         "position_notional_usd":notional,

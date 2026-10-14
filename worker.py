@@ -4,6 +4,7 @@ from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from datetime import datetime,timezone
 
 import config,news_listener,position_monitor,trade_cycle,paper_execution,execution_router,decision_gate,observability
+import strategy_mode,scalp_decision_gate,telegram_control
 import position_exit_guard
 from astra_client import decide
 
@@ -28,6 +29,8 @@ R={
     "skip_reasons":{},
     "observability":{},
     "performance":{},
+    "strategy_mode":strategy_mode.status(),
+    "telegram_control":telegram_control.STATE,
 }
 def now():return datetime.now(timezone.utc)
 
@@ -72,6 +75,8 @@ def main():
         target=lambda:ThreadingHTTPServer(("0.0.0.0",config.PORT),H).serve_forever(),
         daemon=True
     ).start()
+    if config.TELEGRAM_CONTROL_ENABLED:
+        threading.Thread(target=telegram_control.run_forever,daemon=True).start()
 
     paper_execution.init_state(config.INITIAL_EQUITY,False)
     R["status"]="ok"
@@ -80,10 +85,17 @@ def main():
     last_pos=0
     last_exit=0
     last_decision={a:0 for a in config.ALLOWED_ASSETS}
+    last_mode=None
 
     while True:
         t=time.time()
         try:
+            mode=strategy_mode.get_mode()
+            if mode!=last_mode:
+                last_decision={a:0 for a in config.ALLOWED_ASSETS}
+                last_mode=mode
+            R["strategy_mode"]=strategy_mode.status()
+            R["telegram_control"]=dict(telegram_control.STATE)
             high=set()
 
             if t-last_news>=config.NEWS_POLL_SECONDS:
@@ -125,36 +137,34 @@ def main():
                         R["emergency_exits"]+=1
                 last_exit=t
 
-            if config.AUTO_DECISION:
-                for a in config.ALLOWED_ASSETS:
-                    if t-last_decision[a]>=config.DECISION_INTERVAL_SECONDS or a in high:
-                        p=trade_cycle.prepare(a,12)
-                        gate=decision_gate.evaluate(p,force_event=a in high)
+            if config.AUTO_DECISION and mode!="PAUSED":
+                assets=config.SCALP_ALLOWED_ASSETS if mode=="SCALP" else config.ALLOWED_ASSETS
+                interval=config.SCALP_DECISION_INTERVAL_SECONDS if mode=="SCALP" else config.DECISION_INTERVAL_SECONDS
+                gate_module=scalp_decision_gate if mode=="SCALP" else decision_gate
+                for a in assets:
+                    if t-last_decision.get(a,0)>=interval or a in high:
+                        p=trade_cycle.prepare(a,12,mode)
+                        gate=gate_module.evaluate(p,force_event=a in high)
 
                         if not gate["call_model"]:
-                            d={"asset":a,"action":"WAIT","reason":gate["reason"],"gate":gate}
+                            d={"asset":a,"action":"WAIT","reason":gate["reason"],"gate":gate,"strategy_mode":mode}
                             x={"status":"NO_TRADE","reason":gate["reason"]}
                             R["model_skips"]+=1
                         else:
-                            # Include the deterministic gate result in the model context.
-                            # This lets ASTRA distinguish NORMAL vs TRANSITION without
-                            # giving it authority to override deterministic rules.
                             p["model_gate"]=gate
                             d=decide(p)
                             d["gate"]=gate
+                            d["strategy_mode"]=mode
                             R["model_calls"]+=1
                             x=trade_cycle.execute(d) if config.AUTO_PAPER_EXECUTION else {"status":"DECISION_ONLY"}
 
                         R["last_decisions"][a]={
                             "at_utc":now().isoformat(),
+                            "strategy_mode":mode,
                             "decision":d,
                             "execution":x,
                         }
-
-                        # Passive funnel/journal. It cannot authorize or block trades.
-                        observability.record_decision(
-                            p,gate,d,x,model_called=bool(gate.get("call_model"))
-                        )
+                        observability.record_decision(p,gate,d,x,model_called=bool(gate.get("call_model")))
                         refresh_observability()
                         last_decision[a]=t
 

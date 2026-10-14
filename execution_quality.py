@@ -21,6 +21,8 @@ def min_rr_for_mode(mode):
     mode=str(mode or "NORMAL").upper()
     if mode=="TRANSITION":
         return float(config.MTF_TRANSITION_MIN_TP1_R), float(config.MTF_TRANSITION_MIN_TP2_R)
+    if mode=="SCALP":
+        return float(config.SCALP_MIN_TP1_R), float(config.SCALP_MIN_TP2_R)
     return float(config.MIN_TP1_R), float(config.MIN_TP2_R)
 
 def max_slippage_pct(asset):

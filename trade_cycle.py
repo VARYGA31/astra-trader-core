@@ -40,7 +40,8 @@ def account_state():
         "trading_halted":s.get("trading_halted",False),
     }
 
-def prepare(asset,hours=12):
+def prepare(asset,hours=12,strategy_mode_name=None):
+    active_mode=str(strategy_mode_name or strategy_mode.get_mode()).upper()
     c = decision_context.build(asset,hours)
     s = account_state()
     ts = parse_ts(c.get("market",{}).get("generated_at_utc"))
@@ -49,7 +50,7 @@ def prepare(asset,hours=12):
         **c.get("guards",{}),
         "market_stale":age > config.STALE_MARKET_SECONDS,
         "cooldown":cooldown.status(asset),
-        "loss_streak_pause":performance_guard.status(),
+        "loss_streak_pause":performance_guard.status(active_mode),
         "trading_halted":s.get("trading_halted",False),
         "asset_already_open":asset in set(s.get("open_assets",[])),
     }
@@ -58,7 +59,8 @@ def prepare(asset,hours=12):
         "asset":asset,
         "decision_context":c,
         "execution_mode":config.EXECUTION_MODE,
-        "timeframe":config.TRADING_TIMEFRAME,
+        "timeframe":"5m" if active_mode=="SCALP" else config.TRADING_TIMEFRAME,
+        "strategy_mode":active_mode,
         "account_state":s,
         "guards":guards,
     }
@@ -89,8 +91,14 @@ def execute(decision):
     if action == "WAIT":
         return {"status":"NO_TRADE","reason":"ASTRA_WAIT"}
 
-    decision["timeframe"] = decision.get("timeframe") or config.TRADING_TIMEFRAME
-    p = prepare(asset,12)
+    decision_mode=str(decision.get("strategy_mode") or "NORMAL").upper()
+    active_mode=strategy_mode.get_mode()
+    if active_mode=="PAUSED":
+        return {"status":"REJECTED","reason":"STRATEGY_PAUSED"}
+    if decision_mode!=active_mode:
+        return {"status":"REJECTED","reason":"MODE_CHANGED_BEFORE_EXECUTION","decision_mode":decision_mode,"active_mode":active_mode}
+    decision["timeframe"] = decision.get("timeframe") or ("5m" if decision_mode=="SCALP" else config.TRADING_TIMEFRAME)
+    p = prepare(asset,12,decision_mode)
     g = p["guards"]
 
     if g.get("market_stale") or not g.get("market_ok"):
@@ -115,12 +123,19 @@ def execute(decision):
     if config.ONE_POSITION_PER_ASSET and g.get("asset_already_open"):
         return {"status":"REJECTED","reason":"ASSET_ALREADY_HAS_OPEN_POSITION"}
 
-    # Re-check 4H -> 1H -> 15M alignment using FRESH data immediately before execution.
-    mtf = mtf_gate.evaluate(p)
+    # Re-check the active strategy with FRESH data immediately before execution.
+    if decision_mode=="SCALP":
+        mtf=scalp_gate.evaluate(p)
+        mtf_reject_reason="SCALP_NOT_ALIGNED_AT_EXECUTION"
+        chase=scalp_gate.entry_guard(p,action)
+    else:
+        mtf=mtf_gate.evaluate(p)
+        mtf_reject_reason="MTF_NOT_ALIGNED_AT_EXECUTION"
+        chase=decision_gate.entry_guard(p,action)
     if not mtf.get("passed"):
         return {
             "status":"REJECTED",
-            "reason":"MTF_NOT_ALIGNED_AT_EXECUTION",
+            "reason":mtf_reject_reason,
             "stage":"entry_quality",
             "mtf":mtf,
         }
@@ -133,7 +148,6 @@ def execute(decision):
             "astra_action":action,
         }
 
-    chase = decision_gate.entry_guard(p, action)
     if chase.get("blocked"):
         return {
             "status":"REJECTED",
@@ -178,8 +192,9 @@ def execute(decision):
     decision["execution_reference_price"]=current
     decision["execution_price_source"]=execution_price_source
     decision["mtf_quality"]=mtf.get("quality")
-    decision["mtf_mode"]=mtf.get("mode") or "NORMAL"
+    decision["mtf_mode"]="SCALP" if decision_mode=="SCALP" else (mtf.get("mode") or "NORMAL")
     decision["mtf_gate"]=mtf
+    decision["strategy_mode"]=decision_mode
 
     s = p["account_state"]
 
@@ -244,6 +259,7 @@ def execute(decision):
         "current_exposure_usd":s["current_exposure_usd"],
         "asset_already_open":g.get("asset_already_open",False),
         "critical_news_verified":True,
+        "strategy_mode":decision_mode,
     }
     r = risk_engine.evaluate(rinput)
     if r.get("status") != "APPROVED":
@@ -256,7 +272,11 @@ def execute(decision):
         return paper_execution.open_position(path)
 
     if config.EXECUTION_MODE == "okx_demo":
-        return execution_router.open_trade(decision,r)
+        with strategy_mode.RUNTIME_LOCK:
+            latest_mode=strategy_mode.get_mode()
+            if latest_mode!=decision_mode:
+                return {"status":"REJECTED","reason":"MODE_CHANGED_BEFORE_ORDER_SUBMISSION","decision_mode":decision_mode,"active_mode":latest_mode}
+            return execution_router.open_trade(decision,r)
 
     return {"status":"REJECTED","reason":"UNKNOWN_EXECUTION_MODE"}
 
