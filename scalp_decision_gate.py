@@ -55,7 +55,7 @@ def evaluate(package,force_event=False):
 
     gate=scalp_gate.evaluate(package)
     if not gate.get("passed"):
-        return {"call_model":False,"reason":gate.get("reason","SCALP_NOT_ALIGNED"),"mtf":gate}
+        return {"call_model":False,"reason":gate.get("primary_blocker") or gate.get("reason","SCALP_NOT_ALIGNED"),"mtf":gate}
     chase=scalp_gate.entry_guard(package,gate.get("direction"))
     if chase.get("blocked"):
         return {"call_model":False,"reason":chase.get("reason"),"mtf":gate,"chase_guard":chase}
@@ -69,6 +69,7 @@ def evaluate(package,force_event=False):
             "last_trigger_candle_id":candle,
             "last_direction":gate.get("direction"),
             "last_quality":gate.get("quality"),
+            "last_tier":gate.get("tier"),
             "last_called_at_utc":datetime.now(timezone.utc).isoformat(),
         }
         _save(st)
@@ -78,6 +79,7 @@ def evaluate(package,force_event=False):
         "allowed_direction":gate.get("direction"),
         "mtf_quality":gate.get("quality"),
         "mtf_mode":"SCALP",
+        "scalp_tier":gate.get("tier"),
         "new_trigger_candle":new_trigger,
         "mtf":gate,
         "chase_guard":chase,

@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from datetime import datetime,timezone
 
 import config,news_listener,position_monitor,trade_cycle,paper_execution,execution_router,decision_gate,observability
-import strategy_mode,scalp_decision_gate,telegram_control
+import strategy_mode,scalp_decision_gate,telegram_control,scalp_stats
 import position_exit_guard
 from astra_client import decide
 
@@ -31,6 +31,7 @@ R={
     "performance":{},
     "strategy_mode":strategy_mode.status(),
     "telegram_control":telegram_control.STATE,
+    "scalp_stats_6h":scalp_stats.summary(6),
 }
 def now():return datetime.now(timezone.utc)
 
@@ -44,6 +45,7 @@ def refresh_observability():
         R["skip_reasons"]=o.get("skip_reasons",{})
         started=o.get("started_at_utc")
         R["performance"]=observability.trade_performance(started)
+        R["scalp_stats_6h"]=scalp_stats.summary(6)
     except Exception:
         # Diagnostics must never be able to degrade the trading worker.
         pass
@@ -165,6 +167,8 @@ def main():
                             "execution":x,
                         }
                         observability.record_decision(p,gate,d,x,model_called=bool(gate.get("call_model")))
+                        if mode=="SCALP":
+                            scalp_stats.record(p,gate,d,x,model_called=bool(gate.get("call_model")))
                         refresh_observability()
                         last_decision[a]=t
 

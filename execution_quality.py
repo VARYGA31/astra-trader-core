@@ -17,11 +17,13 @@ def rr(entry, stop, target):
     risk=abs(entry-stop)
     return abs(target-entry)/risk if risk>0 else 0.0
 
-def min_rr_for_mode(mode):
+def min_rr_for_mode(mode, scalp_tier=None):
     mode=str(mode or "NORMAL").upper()
     if mode=="TRANSITION":
         return float(config.MTF_TRANSITION_MIN_TP1_R), float(config.MTF_TRANSITION_MIN_TP2_R)
     if mode=="SCALP":
+        if str(scalp_tier or "PRIME").upper()=="FAST":
+            return float(config.SCALP_FAST_MIN_TP1_R), float(config.SCALP_FAST_MIN_TP2_R)
         return float(config.SCALP_MIN_TP1_R), float(config.SCALP_MIN_TP2_R)
     return float(config.MIN_TP1_R), float(config.MIN_TP2_R)
 
@@ -112,14 +114,15 @@ def raw_fok_limit(action, reference, stop, tp1, tp2, min_tp1_r, min_tp2_r, max_a
         return max(slip_floor,b1,b2)
     raise ValueError("INVALID_ACTION")
 
-def build_entry_guard(asset, action, reference, stop, tp1, tp2, mode="NORMAL"):
-    r1,r2=min_rr_for_mode(mode)
+def build_entry_guard(asset, action, reference, stop, tp1, tp2, mode="NORMAL", scalp_tier=None):
+    r1,r2=min_rr_for_mode(mode,scalp_tier)
     audit=audit_price(action,reference,stop,tp1,tp2,r1,r2)
     slip=max_slippage_pct(asset)
     out={
         "asset":str(asset).upper(),
         "action":str(action).upper(),
         "mode":str(mode or "NORMAL").upper(),
+        "scalp_tier":str(scalp_tier).upper() if scalp_tier else None,
         "reference_price":float(reference),
         "max_adverse_slippage_pct":slip,
         "minimum_tp1_r":r1,
@@ -139,8 +142,8 @@ def build_entry_guard(asset, action, reference, stop, tp1, tp2, mode="NORMAL"):
     })
     return out
 
-def audit_fill(asset, action, reference, fill, stop, tp1, tp2, mode="NORMAL"):
-    r1,r2=min_rr_for_mode(mode)
+def audit_fill(asset, action, reference, fill, stop, tp1, tp2, mode="NORMAL", scalp_tier=None):
+    r1,r2=min_rr_for_mode(mode,scalp_tier)
     rr_audit=audit_price(action,fill,stop,tp1,tp2,r1,r2)
     adverse=adverse_slippage_pct(action,reference,fill)
     maximum=max_slippage_pct(asset)

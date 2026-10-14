@@ -10,6 +10,7 @@ try:
         assert telegram_control.parse_mode_command("/normal")=="NORMAL"
         assert telegram_control.parse_mode_command("⚡ SCALP")=="SCALP"
         assert telegram_control.parse_mode_command("⏸ PAUSE")=="PAUSED"
+        assert "SCALP FUNNEL" in telegram_control._scalp_stats_text(6)
         strategy_mode.set_mode("NORMAL","TEST")
         assert strategy_mode.get_mode()=="NORMAL"
         assert strategy_mode.switch_check("NORMAL","SCALP",0)["allowed"] is True

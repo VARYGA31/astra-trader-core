@@ -21,6 +21,7 @@ def open_trade(decision, risk):
     action = str(decision.get("action","")).upper()
     mtf_mode = str(decision.get("mtf_mode") or "NORMAL").upper()
     strategy_mode = str(decision.get("strategy_mode") or ("SCALP" if mtf_mode=="SCALP" else "NORMAL")).upper()
+    scalp_tier = str(risk.get("scalp_tier") or decision.get("scalp_tier") or "PRIME").upper() if strategy_mode=="SCALP" else None
 
     # FINAL exchange-side portfolio guard immediately before order submission.
     summary = adapter.exchange_active_summary()
@@ -63,7 +64,7 @@ def open_trade(decision, risk):
     # ----- Execution quality guard -----
     # Re-read the live OKX swap ticker immediately before sending the order.
     pre_order_reference = float(adapter.ticker(asset))
-    min_tp1_r, min_tp2_r = execution_quality.min_rr_for_mode(mtf_mode)
+    min_tp1_r, min_tp2_r = execution_quality.min_rr_for_mode(mtf_mode,scalp_tier)
 
     quality_guard = execution_quality.build_entry_guard(
         asset=asset,
@@ -73,6 +74,7 @@ def open_trade(decision, risk):
         tp1=risk["take_profit_1"],
         tp2=risk["take_profit_2"],
         mode=mtf_mode,
+        scalp_tier=scalp_tier,
     )
 
     if config.EXECUTION_QUALITY_ENABLED and not quality_guard.get("passed"):
@@ -139,6 +141,7 @@ def open_trade(decision, risk):
         tp1=risk["take_profit_1"],
         tp2=risk["take_profit_2"],
         mode=mtf_mode,
+        scalp_tier=scalp_tier,
     )
 
     # This should be mathematically unreachable with a correctly respected FOK
@@ -225,6 +228,7 @@ def open_trade(decision, risk):
         "tp2_qty_contracts":protection.get("tp2_qty_contracts"),
         "mode":"OKX DEMO",
         "strategy_mode":strategy_mode,
+        "scalp_tier":scalp_tier,
         "confidence":decision.get("confidence"),
         "decision_reason":decision.get("reason"),
         "data_quality":decision.get("data_quality"),

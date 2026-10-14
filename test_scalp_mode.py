@@ -22,7 +22,7 @@ package={"asset":"BTC","strategy_mode":"SCALP","decision_context":{"market":{
     "spot":{"order_book":{"imbalance":.05},"trade_flow":{"buy_sell_ratio":1.1}},
 }}}
 g=scalp_gate.evaluate(package)
-assert g["passed"] and g["direction"]=="LONG" and g["mode"]=="SCALP",g
+assert g["passed"] and g["direction"]=="LONG" and g["mode"]=="SCALP" and g["tier"]=="PRIME",g
 assert g["trigger_candle_id"]==30,g
 
 r=risk_engine.evaluate({
@@ -37,7 +37,7 @@ assert r["status"]=="APPROVED",r
 assert r["strategy_mode"]=="SCALP",r
 assert r["leverage"]==7.0,r
 assert abs(r["risk_pct_budget"]-.0075)<1e-12,r
-assert execution_quality.min_rr_for_mode("SCALP")== (config.SCALP_MIN_TP1_R,config.SCALP_MIN_TP2_R)
+assert execution_quality.min_rr_for_mode("SCALP","PRIME")== (config.SCALP_MIN_TP1_R,config.SCALP_MIN_TP2_R)
 print(json.dumps({
     "status":"OK","will_open_order":False,"will_close_order":False,"will_call_model":False,
     "scalp_gate_passed":g["passed"],"direction":g["direction"],"quality":g["quality"],

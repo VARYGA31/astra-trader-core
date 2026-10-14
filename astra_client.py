@@ -15,10 +15,12 @@ FINAL DECISION CALIBRATION POLICY:
 """
 
 SCALP_POLICY = """
-ASTRA SCALP FINAL DECISION POLICY:
-- The Python gate already performs 1H regime -> 15M setup -> confirmed 5M trigger filtering.
+ASTRA SCALP v2 FINAL DECISION POLICY:
+- The Python gate already performs 1H regime -> 15M setup -> 5M trigger filtering and assigns a tier: PRIME or FAST.
+- PRIME is the stricter 5M trigger path. FAST intentionally accepts a 3/5 trigger only when higher-timeframe alignment, volume, spread and microstructure are stronger; downstream Python reduces FAST risk and leverage.
 - You are deciding a short-horizon scalp, not a swing trade. Use only the allowed_direction supplied by the gate.
-- A valid SCALP gate is actionable unless supplied data shows a concrete hard invalidator. Do not WAIT merely for another candle or a nicer retest after a confirmed 5M trigger.
+- A valid SCALP gate is actionable unless supplied data shows a concrete hard invalidator. Do not WAIT merely because FAST has 3/5 instead of 4/5, and do not WAIT merely for another candle or a nicer retest after the deterministic gate passed.
+- PRIME requires at least the supplied PRIME confidence minimum. FAST requires the supplied higher FAST confidence minimum.
 - Respect the 5M/15M structure. Stop must sit beyond a logical short-horizon invalidation; do not make it artificially tight.
 - Targets must be realistic for a scalp and must satisfy at least the supplied SCALP R:R minimums.
 - WAIT only for concrete CHASE_RISK, STRUCTURE_CONFLICT, NEWS_RISK, VOLATILITY_RISK, LIQUIDITY_SPREAD_RISK, RR_OR_STOP_INVALID, REVERSAL_RISK, or DATA_QUALITY.
@@ -80,14 +82,17 @@ def _compact(p):
     for e in n.get("events",[])[:config.MAX_MODEL_NEWS_EVENTS]:
         ev.append({k:e.get(k) for k in ("id","source","verification_status","published_at_utc","title","event_type","impact_hint","trade_usable")})
     policy={
-        "version":"scalp_v1" if mode=="SCALP" else "normal_cal_v1",
+        "version":"scalp_v2" if mode=="SCALP" else "normal_cal_v1",
         "strategy_mode":mode,
         "normal_min_trade_confidence":config.MIN_TRADE_CONFIDENCE,
         "transition_min_trade_confidence":config.MTF_TRANSITION_MIN_CONFIDENCE,
         "xau_min_trade_confidence":config.XAU_MIN_TRADE_CONFIDENCE,
-        "scalp_min_trade_confidence":config.SCALP_MIN_TRADE_CONFIDENCE,
-        "scalp_min_tp1_r":config.SCALP_MIN_TP1_R,
-        "scalp_min_tp2_r":config.SCALP_MIN_TP2_R,
+        "scalp_prime_min_trade_confidence":config.SCALP_MIN_TRADE_CONFIDENCE,
+        "scalp_fast_min_trade_confidence":config.SCALP_FAST_MIN_TRADE_CONFIDENCE,
+        "scalp_prime_min_tp1_r":config.SCALP_MIN_TP1_R,
+        "scalp_prime_min_tp2_r":config.SCALP_MIN_TP2_R,
+        "scalp_fast_min_tp1_r":config.SCALP_FAST_MIN_TP1_R,
+        "scalp_fast_min_tp2_r":config.SCALP_FAST_MIN_TP2_R,
         "wait_requires_concrete_blocker":True,
     }
     return {
@@ -125,7 +130,9 @@ def _normalize_decision(d,package):
     d["timeframe"]=d.get("timeframe") or package.get("timeframe") or ("5m" if mode=="SCALP" else config.TRADING_TIMEFRAME)
     d["strategy_mode"]=mode
     d["setup_type"]=str(d.get("setup_type","NONE")).upper()
-    d["decision_policy_version"]="scalp_v1" if mode=="SCALP" else "normal_cal_v1"
+    d["decision_policy_version"]="scalp_v2" if mode=="SCALP" else "normal_cal_v1"
+    if mode=="SCALP":
+        d["scalp_tier"]=str(package.get("model_gate",{}).get("scalp_tier") or package.get("model_gate",{}).get("mtf",{}).get("tier") or "PRIME").upper()
     cat=str(d.get("wait_category") or "NONE").upper().strip()
     if cat not in ALLOWED_WAIT_CATEGORIES:cat="UNSPECIFIED"
     if d["action"]=="WAIT":

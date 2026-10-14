@@ -36,11 +36,24 @@ def _scalp_risk_pct(confidence,mtf_quality,dd_mult):
         base=config.SCALP_RISK_PCT_92_PLUS
     return min(base*dd_mult,config.SCALP_HARD_RISK_PCT),quality
 
-def _leverage(asset, volatility, quality, confidence, stop_dist_pct, strategy_mode="NORMAL"):
+def _scalp_fast_risk_pct(confidence,mtf_quality,dd_mult):
+    confidence=float(confidence); mtf_quality=float(mtf_quality)
+    quality=min(confidence,mtf_quality)
+    if confidence < config.SCALP_FAST_MIN_TRADE_CONFIDENCE or mtf_quality < config.SCALP_FAST_MIN_QUALITY:
+        return None,quality
+    best=(confidence>=config.SCALP_FAST_BEST_MIN_CONFIDENCE and mtf_quality>=config.SCALP_FAST_BEST_MIN_QUALITY)
+    base=config.SCALP_FAST_RISK_PCT_BEST if best else config.SCALP_FAST_RISK_PCT_BASE
+    return min(base*dd_mult,config.SCALP_FAST_HARD_RISK_PCT),quality
+
+def _leverage(asset, volatility, quality, confidence, stop_dist_pct, strategy_mode="NORMAL", scalp_tier="PRIME"):
     v=str(volatility or "NORMAL").upper()
     strategy_mode=str(strategy_mode or "NORMAL").upper()
 
     if strategy_mode=="SCALP":
+        scalp_tier=str(scalp_tier or "PRIME").upper()
+        if scalp_tier=="FAST":
+            lev=config.SCALP_FAST_LEVERAGE_HIGH_VOL if v in {"ELEVATED","HIGH","EXTREME"} else config.SCALP_FAST_LEVERAGE_NORMAL
+            return min(max(float(lev),1.0),float(config.SCALP_FAST_MAX_LEVERAGE))
         if v in {"ELEVATED","HIGH","EXTREME"}:
             lev=config.SCALP_LEVERAGE_HIGH_VOL
         elif quality>=config.SCALP_BEST_SETUP_MIN_QUALITY and confidence>=config.SCALP_BEST_SETUP_MIN_CONFIDENCE:
@@ -95,15 +108,19 @@ def evaluate(d):
     mtf_mode=str(d.get("mtf_mode") or d.get("mtf_gate",{}).get("mode") or "NORMAL").upper()
     strategy_mode=str(d.get("strategy_mode") or ("SCALP" if mtf_mode=="SCALP" else "NORMAL")).upper()
     is_scalp=(strategy_mode=="SCALP" or mtf_mode=="SCALP")
+    scalp_tier=str(d.get("scalp_tier") or d.get("gate",{}).get("scalp_tier") or d.get("mtf_gate",{}).get("tier") or "PRIME").upper()
+    if scalp_tier not in {"PRIME","FAST"}: scalp_tier="PRIME"
     is_transition=(mtf_mode=="TRANSITION")
 
     if is_scalp:
         if asset not in set(config.SCALP_ALLOWED_ASSETS):
             return reject("SCALP_ASSET_NOT_ALLOWED")
-        if confidence<config.SCALP_MIN_TRADE_CONFIDENCE:
-            return reject("SCALP_CONFIDENCE_TOO_LOW",{"confidence":confidence,"minimum":config.SCALP_MIN_TRADE_CONFIDENCE})
-        if mtf_quality<config.SCALP_MIN_QUALITY:
-            return reject("SCALP_QUALITY_TOO_LOW",{"mtf_quality":mtf_quality,"minimum":config.SCALP_MIN_QUALITY})
+        min_conf=config.SCALP_FAST_MIN_TRADE_CONFIDENCE if scalp_tier=="FAST" else config.SCALP_MIN_TRADE_CONFIDENCE
+        min_quality=config.SCALP_FAST_MIN_QUALITY if scalp_tier=="FAST" else config.SCALP_MIN_QUALITY
+        if confidence<min_conf:
+            return reject("SCALP_CONFIDENCE_TOO_LOW",{"confidence":confidence,"minimum":min_conf,"scalp_tier":scalp_tier})
+        if mtf_quality<min_quality:
+            return reject("SCALP_QUALITY_TOO_LOW",{"mtf_quality":mtf_quality,"minimum":min_quality,"scalp_tier":scalp_tier})
     elif is_transition:
         # Transition mode is crypto-only and deliberately stricter on model
         # confidence while using a smaller deterministic risk budget.
@@ -140,7 +157,10 @@ def evaluate(d):
 
     rr1=_rr(entry,stop,tp1); rr2=_rr(entry,stop,tp2)
     if is_scalp:
-        min_tp1=config.SCALP_MIN_TP1_R; min_tp2=config.SCALP_MIN_TP2_R
+        if scalp_tier=="FAST":
+            min_tp1=config.SCALP_FAST_MIN_TP1_R; min_tp2=config.SCALP_FAST_MIN_TP2_R
+        else:
+            min_tp1=config.SCALP_MIN_TP1_R; min_tp2=config.SCALP_MIN_TP2_R
     else:
         min_tp1=max(config.MIN_TP1_R,config.MTF_TRANSITION_MIN_TP1_R) if is_transition else config.MIN_TP1_R
         min_tp2=max(config.MIN_TP2_R,config.MTF_TRANSITION_MIN_TP2_R) if is_transition else config.MIN_TP2_R
@@ -171,9 +191,12 @@ def evaluate(d):
             return reject("SCALP_STOP_TOO_WIDE",{"stop_pct":stop_pct,"maximum":config.SCALP_MAX_STOP_PCT})
 
     if is_scalp:
-        risk_pct,quality=_scalp_risk_pct(confidence,mtf_quality,dd_mult)
+        if scalp_tier=="FAST":
+            risk_pct,quality=_scalp_fast_risk_pct(confidence,mtf_quality,dd_mult)
+        else:
+            risk_pct,quality=_scalp_risk_pct(confidence,mtf_quality,dd_mult)
         if risk_pct is None:
-            return reject("SCALP_TRADE_QUALITY_TOO_LOW",{"quality":quality})
+            return reject("SCALP_TRADE_QUALITY_TOO_LOW",{"quality":quality,"scalp_tier":scalp_tier})
     elif is_transition:
         quality=min(confidence,mtf_quality)
         risk_pct=min(config.MTF_TRANSITION_RISK_PCT*dd_mult,config.HARD_RISK_PCT)
@@ -183,7 +206,7 @@ def evaluate(d):
             return reject("TRADE_QUALITY_TOO_LOW",{"quality":quality})
 
     risk_usd=eq*risk_pct
-    leverage=_leverage(asset,d.get("volatility_regime"),quality,confidence,stop_dist_pct,strategy_mode=strategy_mode)
+    leverage=_leverage(asset,d.get("volatility_regime"),quality,confidence,stop_dist_pct,strategy_mode=strategy_mode,scalp_tier=scalp_tier)
 
     # Notional is always risk-budgeted. Higher leverage does NOT increase risk budget.
     notional=min(
@@ -211,6 +234,7 @@ def evaluate(d):
         "mtf_quality":mtf_quality,
         "mtf_mode":mtf_mode,
         "strategy_mode":strategy_mode,
+        "scalp_tier":scalp_tier if is_scalp else None,
         "trade_quality":quality,
         "risk_pct_budget":risk_pct,
         "position_notional_usd":notional,

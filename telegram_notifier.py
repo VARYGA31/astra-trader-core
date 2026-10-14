@@ -70,11 +70,13 @@ def _strategy_header(trade):
 def notify_open(trade):
     side = str(trade.get("side","")).upper()
     icon = "🟢" if side in {"LONG","BUY"} else "🔴"
+    tier_line=(f"SCALP tier: <b>{html.escape(str(trade.get('scalp_tier','PRIME')))}</b>\n" if str(trade.get("strategy_mode") or "").upper()=="SCALP" else "")
     text = (
         f"{icon} {_strategy_header(trade)} — <b>ПОЗИЦИЯ ОТКРЫТА</b>\n\n"
         f"Монета: <b>{html.escape(str(trade.get('asset','—')))}</b>\n"
         f"Направление: <b>{html.escape(side)}</b>\n"
         f"Таймфрейм: <b>{html.escape(str(trade.get('timeframe',config.TRADING_TIMEFRAME)))}</b>\n"
+        f"{tier_line}"
         f"Вход: <b>{_fmt_num(trade.get('entry'))}</b>\n"
         f"Сумма позиции: <b>${_fmt_num(trade.get('notional_usd'),2)}</b>\n"
         f"Маржа: <b>${_fmt_num(trade.get('margin_usd'),2)}</b>\n"
@@ -113,6 +115,7 @@ def notify_close(trade):
         f"Монета: <b>{html.escape(str(trade.get('asset','—')))}</b>\n"
         f"Направление: <b>{html.escape(str(trade.get('side','—')))}</b>\n"
         f"Таймфрейм: <b>{html.escape(str(trade.get('timeframe',config.TRADING_TIMEFRAME)))}</b>\n"
+        f"{tier_line}"
         f"Вход: <b>{_fmt_num(trade.get('entry'))}</b>\n"
         f"Выход: <b>{_fmt_num(trade.get('exit_price'))}</b>\n"
         f"Сумма позиции: <b>${_fmt_num(trade.get('notional_usd'),2)}</b>\n"

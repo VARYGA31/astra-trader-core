@@ -193,6 +193,8 @@ def execute(decision):
     decision["execution_price_source"]=execution_price_source
     decision["mtf_quality"]=mtf.get("quality")
     decision["mtf_mode"]="SCALP" if decision_mode=="SCALP" else (mtf.get("mode") or "NORMAL")
+    if decision_mode=="SCALP":
+        decision["scalp_tier"]=mtf.get("tier") or decision.get("scalp_tier") or "PRIME"
     decision["mtf_gate"]=mtf
     decision["strategy_mode"]=decision_mode
 

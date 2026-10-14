@@ -8,7 +8,7 @@ PAUSED is always allowed and stops only new entries.
 import json,time
 from pathlib import Path
 import requests
-import config,strategy_mode,telegram_notifier,demo_ledger
+import config,strategy_mode,telegram_notifier,demo_ledger,scalp_stats
 from okx_demo_adapter import OKXDemoAdapter
 
 API="https://api.telegram.org"
@@ -20,6 +20,7 @@ def keyboard():
         "keyboard":[
             [{"text":"🟦 NORMAL"},{"text":"⚡ SCALP"}],
             [{"text":"⏸ PAUSE"},{"text":"📊 STATUS"}],
+            [{"text":"📈 SCALP STATS"}],
         ],
         "resize_keyboard":True,
         "is_persistent":True,
@@ -56,6 +57,34 @@ def _summary():
         f"⚡ SCALP: 1H → 15M → 5M (BTC/ETH/GRAM)\n"
         f"⏸ PAUSE: новые входы выключены, защита открытой позиции продолжает работать."
     )
+
+def _scalp_stats_text(hours=6):
+    s=scalp_stats.summary(hours)
+    b=s.get("blockers",{})
+    tiers=s.get("gate_passes_by_tier",{})
+    acts=s.get("model_actions",{})
+    lines=[
+        f"📈 <b>ASTRA SCALP FUNNEL — {int(float(s.get('hours',hours)))}h</b>",
+        "",
+        f"Проверок: <b>{s.get('checks',0)}</b>",
+        f"Gate PRIME: <b>{tiers.get('PRIME',0)}</b>",
+        f"Gate FAST: <b>{tiers.get('FAST',0)}</b>",
+        f"Astra calls: <b>{s.get('model_calls',0)}</b>",
+        f"Astra LONG/SHORT: <b>{acts.get('LONG',0)+acts.get('SHORT',0)}</b>",
+        f"Astra WAIT: <b>{s.get('model_waits',0)}</b>",
+        f"Открыто сделок: <b>{s.get('opened_trades',0)}</b>",
+        f"FOK без fill: <b>{s.get('fok_not_filled',0)}</b>",
+        "",
+        "<b>Где чаще блокирует:</b>",
+    ]
+    labels=[("1H_REGIME","1H regime"),("15M_SETUP","15M setup"),("5M_TRIGGER","5M trigger"),("5M_VOLUME","5M volume"),("SPREAD","spread"),("VOLATILITY","volatility"),("MICROSTRUCTURE","microstructure"),("CHASE","anti-chase"),("GUARD","news/guard"),("SAME_TRIGGER","same 5m candle"),("QUALITY","quality")]
+    shown=0
+    for key,label in labels:
+        n=int(b.get(key,0) or 0)
+        if n:
+            lines.append(f"• {label}: <b>{n}</b>"); shown+=1
+    if not shown: lines.append("• пока данных недостаточно")
+    return "\n".join(lines)
 
 def _send(text):
     return telegram_notifier.send_text(text,reply_markup=keyboard())
@@ -96,10 +125,12 @@ def handle_update(update):
         _send(_summary()); return {"status":"OK","action":"STATUS"}
     if text.lower()=="/status" or text.upper()=="📊 STATUS":
         _send(_summary()); return {"status":"OK","action":"STATUS"}
+    if text.lower() in {"/scalp_stats","/scalpstats"} or text.upper()=="📈 SCALP STATS":
+        _send(_scalp_stats_text(6)); return {"status":"OK","action":"SCALP_STATS"}
     target=parse_mode_command(text)
     if target:
         _switch(target); return {"status":"OK","action":"SWITCH","target":target}
-    _send("Команды: /normal, /scalp, /pause, /status, /mode")
+    _send("Команды: /normal, /scalp, /pause, /status, /mode, /scalp_stats")
     return {"status":"OK","action":"HELP"}
 
 def _load_offset():
