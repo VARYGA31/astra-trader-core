@@ -1,30 +1,56 @@
 #!/usr/bin/env python3
-from pathlib import Path
-import json,py_compile
+"""Pure local test: no OpenAI, no OKX, no orders."""
+import json,sys,types
+# Stub OpenAI import: this test never calls the network/model.
+m=types.ModuleType("openai")
+m.OpenAI=object
+sys.modules.setdefault("openai",m)
+import astra_client
 
-required=[
-"config.py","asset_map.py","market_snapshot.py",
-"news_sources.py","news_verifier.py","telegram_markettwits.py","news_snapshot.py","news_listener.py",
-"decision_context.py","decision_gate.py","mtf_gate.py","performance_guard.py","gold_macro.py","risk_engine.py","paper_execution.py","trade_cycle.py",
-"position_monitor.py","trade_journal.py","cooldown.py","execution_quality.py","observability.py","analytics_report.py",
-"astra_client.py","worker.py","exchange_adapter.py",
-"telegram_notifier.py","okx_demo_adapter.py","okx_position_monitor.py",
-"execution_router.py","demo_ledger.py","exit_news_decider.py","position_exit_guard.py",
-"test_strategy_guards.py","test_portfolio_guard.py","test_mtf_strategy.py","test_xau_support.py","test_observability.py","test_transition_mode.py","test_execution_quality.py","test_final_decision_calibration.py","requirements.txt","railway.toml"
-]
+assert "WAIT is an exception, not the default" in astra_client.DECISION_POLICY
+assert "Do NOT WAIT merely because a pullback/retest might be nicer" in astra_client.DECISION_POLICY
+assert "TRANSITION remains conservative" in astra_client.DECISION_POLICY
 
-missing=[x for x in required if not Path(x).exists()]
-syntax={}
-for x in required:
-    if x.endswith(".py") and Path(x).exists():
-        try:
-            py_compile.compile(x,doraise=True);syntax[x]="OK"
-        except Exception as e:syntax[x]=str(e)
+pkg={"asset":"GRAM","timeframe":"1h"}
+trade=astra_client._normalize_decision({
+    "asset":"GRAM","action":"SHORT","confidence":0.88,
+    "setup_type":"PULLBACK_CONTINUATION","wait_category":"CHASE_RISK",
+    "wait_is_hard_blocker":True,
+    "entry":1.37,"stop_loss":1.39,"take_profit_1":1.34,"take_profit_2":1.32,
+},pkg)
+assert trade["action"]=="SHORT"
+assert trade["confidence"]==88.0
+assert trade["wait_category"]=="NONE"
+assert trade["wait_is_hard_blocker"] is False
+assert trade["decision_policy_version"]=="normal_cal_v1"
 
-bad={k:v for k,v in syntax.items() if v!="OK"}
+hard_wait=astra_client._normalize_decision({
+    "asset":"ETH","action":"WAIT","confidence":87,
+    "setup_type":"NONE","wait_category":"REVERSAL_RISK",
+    "wait_is_hard_blocker":True,"reason":"concrete reversal evidence"
+},{"asset":"ETH"})
+assert hard_wait["action"]=="WAIT"
+assert hard_wait["wait_category"]=="REVERSAL_RISK"
+assert hard_wait["wait_is_hard_blocker"] is True
+assert hard_wait["entry"] is None
+
+soft_wait=astra_client._normalize_decision({
+    "asset":"GRAM","action":"WAIT","confidence":90,
+    "wait_category":"RETEST_PREFERENCE","wait_is_hard_blocker":False,
+},{"asset":"GRAM"})
+# Safety invariant: code never auto-converts WAIT into a trade.
+assert soft_wait["action"]=="WAIT"
+assert soft_wait["wait_category"]=="UNSPECIFIED"
+assert soft_wait["wait_is_hard_blocker"] is False
+
 print(json.dumps({
-    "status":"OK" if not missing and not bad else "FAILED",
-    "missing":missing,
-    "syntax_errors":bad
+    "status":"OK",
+    "will_open_order":False,
+    "will_close_order":False,
+    "will_call_model":False,
+    "policy_version":"normal_cal_v1",
+    "normal_wait_is_exception":True,
+    "transition_stays_strict":True,
+    "soft_wait_never_auto_converted":True,
+    "diagnostics_added":["wait_category","wait_is_hard_blocker","model_wait_categories"]
 },ensure_ascii=False,indent=2))
-raise SystemExit(0 if not missing and not bad else 1)
