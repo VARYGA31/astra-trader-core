@@ -16,6 +16,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import config
+import adaptive_memory
 
 DIR = Path(config.STATE_DIR)
 STATE = DIR / "observability_state.json"
@@ -546,6 +547,8 @@ def health_summary():
         "last_approved_trade":s.get("last_approved_trade"),
         "last_shadow_setup":s.get("last_shadow_setup"),
         "last_news_event":s.get("last_news_event"),
+        "adaptive_brain":adaptive_memory.load_brain(),
+        "adaptive_learning_7d":adaptive_memory.summary(168),
     }
 
 def analytics_report(days=None):
@@ -566,6 +569,8 @@ def analytics_report(days=None):
         "trades_since_install":trade_performance(since),
         "trades_all_journal_history":trade_performance(None),
         "recent_shadow_setups":recent_shadow(),
+        "adaptive_brain":adaptive_memory.load_brain(),
+        "adaptive_learning_7d":adaptive_memory.summary(168),
     }
 
 if __name__=="__main__":
