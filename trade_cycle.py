@@ -61,7 +61,7 @@ def prepare(asset,hours=12,strategy_mode_name=None):
         "asset":asset,
         "decision_context":c,
         "execution_mode":config.EXECUTION_MODE,
-        "timeframe":"5m" if active_mode=="SCALP" else config.TRADING_TIMEFRAME,
+        "timeframe":"5m" if active_mode in {"SCALP","AUTO"} else config.TRADING_TIMEFRAME,
         "strategy_mode":active_mode,
         "account_state":s,
         "guards":guards,
