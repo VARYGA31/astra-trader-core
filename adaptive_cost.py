@@ -253,10 +253,10 @@ def plan(packages,state,force=False):
 
     if force and elapsed>=fast:
         return {"call_model":True,"reason":"VERIFIED_EVENT","budget":budget,"reserve":reserve,"local_scan":scan}
-    if scan.get("triggered") and elapsed>=fast:
-        return {"call_model":True,"reason":"LOCAL_OPPORTUNITY_TRIGGER","budget":budget,"reserve":reserve,"local_scan":scan}
     if elapsed>=base and reserve.get("baseline_allowed"):
         return {"call_model":True,"reason":"BASELINE_INTERVAL","budget":budget,"reserve":reserve,"local_scan":scan}
+    if scan.get("triggered") and elapsed>=fast:
+        return {"call_model":True,"reason":"LOCAL_OPPORTUNITY_TRIGGER","budget":budget,"reserve":reserve,"local_scan":scan}
     if elapsed>=base and not reserve.get("baseline_allowed"):
         return {
             "call_model":False,
