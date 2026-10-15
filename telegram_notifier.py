@@ -63,6 +63,10 @@ def send_text(text, reply_markup=None):
 
 def _strategy_header(trade):
     mode=str(trade.get("strategy_mode") or "NORMAL").upper()
+    source=str(trade.get("decision_source") or "").upper()
+    if source=="ADAPTIVE_V1":
+        chosen="SCALP" if mode=="SCALP" else "NORMAL"
+        return f"🧠 <b>ASTRA AUTO → {chosen}</b>"
     if mode=="SCALP":
         return "⚡ <b>ASTRA SCALP</b>"
     return "🟦 <b>ASTRA NORMAL</b>"
@@ -110,6 +114,7 @@ def notify_close(trade):
 
     pnl = trade.get("pnl_usd")
     pnl_icon = "✅" if (pnl is not None and float(pnl) >= 0) else "❌"
+    tier_line=(f"SCALP tier: <b>{html.escape(str(trade.get('scalp_tier','PRIME')))}</b>\n" if str(trade.get("strategy_mode") or "").upper()=="SCALP" else "")
     text = (
         f"{pnl_icon} {_strategy_header(trade)} — <b>ПОЗИЦИЯ ЗАКРЫТА</b>\n\n"
         f"Монета: <b>{html.escape(str(trade.get('asset','—')))}</b>\n"
