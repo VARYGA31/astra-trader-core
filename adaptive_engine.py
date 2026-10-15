@@ -98,7 +98,7 @@ def _decision_from_best(best, package):
         "adaptive_setup_quality":quality,
         "mtf_quality":quality,
         "scalp_tier":tier if strategy=="SCALP" else None,
-        "decision_policy_version":"adaptive_v1",
+        "decision_policy_version":"adaptive_v1_1",
         "time_horizon_minutes":best.get("time_horizon_minutes"),
     }
 
