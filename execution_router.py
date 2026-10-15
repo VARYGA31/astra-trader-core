@@ -228,6 +228,8 @@ def open_trade(decision, risk):
         "tp2_qty_contracts":protection.get("tp2_qty_contracts"),
         "mode":"OKX DEMO",
         "strategy_mode":strategy_mode,
+        "decision_source":"ADAPTIVE_V1" if decision.get("adaptive_mode") else "LEGACY_GATE",
+        "adaptive_mode":bool(decision.get("adaptive_mode")),
         "scalp_tier":scalp_tier,
         "confidence":decision.get("confidence"),
         "decision_reason":decision.get("reason"),
