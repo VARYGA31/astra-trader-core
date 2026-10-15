@@ -104,7 +104,7 @@ def _compact_package(p):
             "last_candle":x.get("last_candle"),
         }
     events=[]
-    for e in (n.get("events") or [])[:config.MAX_MODEL_NEWS_EVENTS]:
+    for e in (n.get("events") or [])[:config.ADAPTIVE_MAX_NEWS_EVENTS]:
         events.append({k:e.get(k) for k in (
             "id","source","verification_status","published_at_utc","title",
             "event_type","impact_hint","trade_usable"
@@ -114,17 +114,28 @@ def _compact_package(p):
     return {
         "asset":p.get("asset"),
         "guards":p.get("guards"),
-        "account_state":p.get("account_state"),
+        "account_state":{
+            "equity":(p.get("account_state") or {}).get("equity"),
+            "open_positions":(p.get("account_state") or {}).get("open_positions"),
+            "current_exposure_usd":(p.get("account_state") or {}).get("current_exposure_usd"),
+            "open_assets":(p.get("account_state") or {}).get("open_assets"),
+            "trading_halted":(p.get("account_state") or {}).get("trading_halted"),
+        },
         "market":{
             "generated_at_utc":m.get("generated_at_utc"),
             "spot":{
                 "price":spot.get("price"),
-                "ticker_24h":spot.get("ticker_24h"),
                 "changes_pct":spot.get("changes_pct"),
-                "indicators":spot.get("indicators"),
+                "indicators":{
+                    "rsi14":(spot.get("indicators") or {}).get("rsi14"),
+                    "atr_pct":(spot.get("indicators") or {}).get("atr_pct"),
+                    "ema20":(spot.get("indicators") or {}).get("ema20"),
+                    "ema50":(spot.get("indicators") or {}).get("ema50"),
+                    "ema200":(spot.get("indicators") or {}).get("ema200"),
+                },
                 "regimes":spot.get("regimes"),
-                "order_book":spot.get("order_book"),
-                "trade_flow":spot.get("trade_flow"),
+                "order_book":{"imbalance":(spot.get("order_book") or {}).get("imbalance")},
+                "trade_flow":{"buy_sell_ratio":(spot.get("trade_flow") or {}).get("buy_sell_ratio")},
             },
             "perp_okx":{
                 "last_price":perp.get("last_price"),
@@ -148,12 +159,15 @@ def _log_usage(r):
     u=getattr(r,"usage",None)
     if not u:
         return
+    details=getattr(u,"input_tokens_details",None)
+    cached=getattr(details,"cached_tokens",0) if details else 0
     row={
         "timestamp_utc":datetime.now(timezone.utc).isoformat(),
         "asset":"MULTI",
         "strategy_mode":"AUTO",
         "model":config.OPENAI_MODEL,
         "input_tokens":getattr(u,"input_tokens",None),
+        "cached_input_tokens":cached,
         "output_tokens":getattr(u,"output_tokens",None),
         "total_tokens":getattr(u,"total_tokens",None),
     }
@@ -266,6 +280,7 @@ def decide_market(packages):
         "input":"Analyze the multi-asset package and return the required JSON only:\n"+
                 json.dumps(payload,ensure_ascii=False,separators=(",",":")),
         "store":False,
+        "max_output_tokens":config.ADAPTIVE_MODEL_MAX_OUTPUT_TOKENS,
     }
     if config.OPENAI_PROMPT_ID:
         kwargs["prompt"]={"id":config.OPENAI_PROMPT_ID}
