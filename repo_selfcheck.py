@@ -5,12 +5,12 @@ import json,py_compile
 required=[
 "config.py","asset_map.py","market_snapshot.py",
 "news_sources.py","news_verifier.py","telegram_markettwits.py","news_snapshot.py","news_listener.py",
-"decision_context.py","decision_gate.py","mtf_gate.py","scalp_gate.py","scalp_decision_gate.py","scalp_stats.py","strategy_mode.py","performance_guard.py","gold_macro.py","adaptive_client.py","adaptive_engine.py","adaptive_memory.py","adaptive_cost.py","risk_engine.py","paper_execution.py","trade_cycle.py",
+"decision_context.py","decision_gate.py","mtf_gate.py","scalp_gate.py","scalp_decision_gate.py","scalp_stats.py","strategy_mode.py","performance_guard.py","gold_macro.py","adaptive_client.py","adaptive_engine.py","adaptive_memory.py","adaptive_cost.py","adaptive_stats.py","risk_engine.py","paper_execution.py","trade_cycle.py",
 "position_monitor.py","trade_journal.py","cooldown.py","execution_quality.py","observability.py","analytics_report.py",
 "astra_client.py","worker.py","exchange_adapter.py",
 "telegram_notifier.py","telegram_control.py","okx_demo_adapter.py","okx_position_monitor.py",
 "execution_router.py","demo_ledger.py","exit_news_decider.py","position_exit_guard.py",
-"test_strategy_guards.py","test_portfolio_guard.py","test_mtf_strategy.py","test_xau_support.py","test_observability.py","test_transition_mode.py","test_execution_quality.py","test_final_decision_calibration.py","test_scalp_mode.py","test_scalp_v2.py","test_scalp_stats.py","test_telegram_mode_control.py","test_adaptive_mode.py","test_adaptive_cost.py","requirements.txt","railway.toml"
+"test_strategy_guards.py","test_portfolio_guard.py","test_mtf_strategy.py","test_xau_support.py","test_observability.py","test_transition_mode.py","test_execution_quality.py","test_final_decision_calibration.py","test_scalp_mode.py","test_scalp_v2.py","test_scalp_stats.py","test_telegram_mode_control.py","test_adaptive_mode.py","test_adaptive_cost.py","test_adaptive_auto_v11.py","requirements.txt","railway.toml"
 ]
 
 missing=[x for x in required if not Path(x).exists()]

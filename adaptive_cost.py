@@ -105,6 +105,24 @@ def budget_status():
         return {"allowed":False,"reason":"DAILY_ESTIMATED_COST_CAP","usage":u}
     return {"allowed":True,"reason":"OK","usage":u}
 
+def reserve_status():
+    """Protect some daily budget for strong late-day opportunities/news."""
+    u=usage_today()
+    reserve_calls=max(0,int(config.ADAPTIVE_BASELINE_RESERVE_CALLS))
+    reserve_usd=max(0.0,float(config.ADAPTIVE_BASELINE_RESERVE_USD))
+    next_call=max(0.0,float(config.ADAPTIVE_ESTIMATED_NEXT_CALL_USD))
+    calls_ok=int(u.get("calls_remaining") or 0)>reserve_calls
+    usd_left=u.get("estimated_cost_remaining_usd")
+    usd_ok=True if usd_left is None else float(usd_left)>=(reserve_usd+next_call)
+    return {
+        "baseline_allowed":bool(calls_ok and usd_ok),
+        "reserve_calls":reserve_calls,
+        "reserve_usd":reserve_usd,
+        "estimated_next_call_usd":next_call,
+        "calls_remaining":u.get("calls_remaining"),
+        "estimated_cost_remaining_usd":usd_left,
+    }
+
 def _spread_pct(package):
     perp=(package or {}).get("decision_context",{}).get("market",{}).get("perp_okx",{})
     bid=_num(perp.get("bid_price")); ask=_num(perp.get("ask_price"))
@@ -231,13 +249,22 @@ def plan(packages,state,force=False):
     elapsed=seconds_since((state or {}).get("last_model_call_at_utc"))
     base=float(config.ADAPTIVE_BASE_MODEL_INTERVAL_MINUTES)*60
     fast=float(config.ADAPTIVE_TRIGGER_MIN_GAP_MINUTES)*60
+    reserve=reserve_status()
 
     if force and elapsed>=fast:
-        return {"call_model":True,"reason":"VERIFIED_EVENT","budget":budget,"local_scan":scan}
-    if elapsed>=base:
-        return {"call_model":True,"reason":"BASELINE_INTERVAL","budget":budget,"local_scan":scan}
+        return {"call_model":True,"reason":"VERIFIED_EVENT","budget":budget,"reserve":reserve,"local_scan":scan}
+    if elapsed>=base and reserve.get("baseline_allowed"):
+        return {"call_model":True,"reason":"BASELINE_INTERVAL","budget":budget,"reserve":reserve,"local_scan":scan}
     if scan.get("triggered") and elapsed>=fast:
-        return {"call_model":True,"reason":"LOCAL_OPPORTUNITY_TRIGGER","budget":budget,"local_scan":scan}
+        return {"call_model":True,"reason":"LOCAL_OPPORTUNITY_TRIGGER","budget":budget,"reserve":reserve,"local_scan":scan}
+    if elapsed>=base and not reserve.get("baseline_allowed"):
+        return {
+            "call_model":False,
+            "reason":"BASELINE_RESERVE_PROTECTED",
+            "budget":budget,
+            "reserve":reserve,
+            "local_scan":scan,
+        }
 
     return {
         "call_model":False,
@@ -245,6 +272,7 @@ def plan(packages,state,force=False):
         "seconds_until_baseline":max(0,int(base-elapsed)),
         "seconds_until_trigger_allowed":max(0,int(fast-elapsed)),
         "budget":budget,
+        "reserve":reserve,
         "local_scan":scan,
     }
 
@@ -267,5 +295,7 @@ def telegram_text():
         "",
         f"Baseline Astra interval: <b>{config.ADAPTIVE_BASE_MODEL_INTERVAL_MINUTES} min</b>",
         f"Early-trigger min gap: <b>{config.ADAPTIVE_TRIGGER_MIN_GAP_MINUTES} min</b>",
+        f"Protected reserve: <b>{config.ADAPTIVE_BASELINE_RESERVE_CALLS} calls / USD {config.ADAPTIVE_BASELINE_RESERVE_USD:.2f}</b>",
+        "Резерв не тратится обычным baseline и остаётся для сильных сигналов/верифицированных событий.",
         "Локальный 5m-скан между вызовами модели не расходует OpenAI API.",
     ])

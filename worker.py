@@ -5,7 +5,7 @@ from datetime import datetime,timezone
 
 import config,news_listener,position_monitor,trade_cycle,paper_execution,execution_router,decision_gate,observability
 import strategy_mode,scalp_decision_gate,telegram_control,scalp_stats
-import adaptive_engine,adaptive_memory,adaptive_cost
+import adaptive_engine,adaptive_memory,adaptive_cost,adaptive_stats
 import position_exit_guard
 from astra_client import decide
 
@@ -53,6 +53,7 @@ def refresh_observability():
         R["adaptive_brain"]=adaptive_memory.load_brain()
         R["adaptive_learning_7d"]=adaptive_memory.summary(168)
         R["adaptive_cost_today"]=adaptive_cost.usage_today()
+        R["adaptive_auto_stats_24h"]=adaptive_stats.summary(24)
     except Exception:
         # Diagnostics must never be able to degrade the trading worker.
         pass
@@ -155,6 +156,7 @@ def main():
                         # failure cannot trigger a retry storm every worker tick.
                         last_auto_decision=t
                         ar=adaptive_engine.run_once(force=force_auto)
+                        adaptive_stats.record(ar)
                         R["last_adaptive_cycle"]={
                             "at_utc":now().isoformat(),
                             "status":ar.get("status"),

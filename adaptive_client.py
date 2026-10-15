@@ -13,7 +13,7 @@ from openai import OpenAI
 import config
 import adaptive_memory
 
-INSTRUCTIONS = """You are ASTRA ADAPTIVE v1, a multi-asset trading strategist.
+INSTRUCTIONS = """You are ASTRA ADAPTIVE v1.1, a multi-asset trading strategist.
 
 Analyze BTC, ETH and GRAM together and choose at most ONE best opportunity.
 You may choose NORMAL, SCALP, or WAIT. NORMAL means a multi-hour trade. SCALP
@@ -31,6 +31,9 @@ IMPORTANT:
 - Use OKX perpetual last_price as entry reference when available.
 - Prefer a trade when evidence is coherent and reward/risk is realistic; do
   not demand perfect alignment across every indicator.
+- The payload contains deterministic execution_requirements. Never propose a
+  LONG/SHORT that obviously fails those minimum confidence, quality, stop or
+  reward/risk requirements. If no candidate satisfies them, return WAIT.
 - WAIT when there is no clear asymmetric opportunity or there is a concrete
   safety/market invalidator.
 - Never invent unavailable data.
@@ -72,7 +75,9 @@ For SHORT require stop > entry > TP1 > TP2.
 For WAIT all price levels must be null.
 For SCALP use FAST unless the setup is exceptionally clean and strong enough
 to justify PRIME. Python will independently enforce confidence, quality, stop,
-R:R, spread, slippage, exposure and drawdown constraints.
+R:R, spread, slippage, exposure and drawdown constraints. Your proposal should
+already satisfy the supplied deterministic execution_requirements so model and
+Risk Engine are aligned.
 """
 
 def _extract(text):
@@ -260,10 +265,48 @@ def normalize(d, packages):
     return {
         "timestamp_utc":datetime.now(timezone.utc).isoformat(),
         "cycle_id":datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ"),
-        "policy_version":"adaptive_v1",
+        "policy_version":"adaptive_v1_1",
         "market_summary":str(d.get("market_summary") or "")[:1200],
         "assets":assets,
         "best_opportunity":out_best,
+    }
+
+def _execution_requirements():
+    return {
+        "NORMAL":{
+            "min_confidence":float(config.MIN_TRADE_CONFIDENCE),
+            "min_setup_quality":float(config.MTF_MIN_QUALITY),
+            "min_tp1_r":float(config.MIN_TP1_R),
+            "min_tp2_r":float(config.MIN_TP2_R),
+            "max_spread_pct":float(config.ADAPTIVE_NORMAL_MAX_SPREAD_PCT),
+            "max_entry_drift_pct":float(config.ENTRY_DRIFT_MAX_PCT),
+        },
+        "SCALP_FAST":{
+            "min_confidence":float(config.SCALP_FAST_MIN_TRADE_CONFIDENCE),
+            "min_setup_quality":float(config.SCALP_FAST_MIN_QUALITY),
+            "min_stop_pct":float(config.SCALP_MIN_STOP_PCT),
+            "max_stop_pct":float(config.SCALP_MAX_STOP_PCT),
+            "min_tp1_r":float(config.SCALP_FAST_MIN_TP1_R),
+            "min_tp2_r":float(config.SCALP_FAST_MIN_TP2_R),
+            "max_spread_pct":min(float(config.SCALP_FAST_MAX_SPREAD_PCT),float(config.ADAPTIVE_SCALP_MAX_SPREAD_PCT)),
+            "max_entry_drift_pct":float(config.ENTRY_DRIFT_MAX_PCT),
+        },
+        "SCALP_PRIME":{
+            "min_confidence":float(config.SCALP_MIN_TRADE_CONFIDENCE),
+            "min_setup_quality":float(config.SCALP_MIN_QUALITY),
+            "min_stop_pct":float(config.SCALP_MIN_STOP_PCT),
+            "max_stop_pct":float(config.SCALP_MAX_STOP_PCT),
+            "min_tp1_r":float(config.SCALP_MIN_TP1_R),
+            "min_tp2_r":float(config.SCALP_MIN_TP2_R),
+            "max_spread_pct":float(config.ADAPTIVE_SCALP_MAX_SPREAD_PCT),
+            "max_entry_drift_pct":float(config.ENTRY_DRIFT_MAX_PCT),
+        },
+        "portfolio":{
+            "max_open_positions":int(config.MAX_OPEN_POSITIONS),
+            "max_total_exposure_pct":float(config.MAX_TOTAL_EXPOSURE_PCT),
+            "one_position_per_asset":bool(config.ONE_POSITION_PER_ASSET),
+            "btc_eth_same_direction_block":bool(config.BLOCK_BTC_ETH_SAME_DIRECTION),
+        },
     }
 
 def decide_market(packages):
@@ -273,6 +316,7 @@ def decide_market(packages):
         "execution_mode":config.EXECUTION_MODE,
         "allowed_assets":list(packages),
         "safety_note":"Python independently validates every actual order.",
+        "execution_requirements":_execution_requirements(),
         "markets":compact,
         "similar_historical_outcomes":memory,
     }
