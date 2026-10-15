@@ -1,0 +1,37 @@
+name: ASTRA Adaptive CI
+
+on:
+  push:
+    branches:
+      - feature/astra-adaptive-v1
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Repository self-check
+        run: python repo_selfcheck.py
+      - name: Adaptive mode pure test
+        run: python test_adaptive_mode.py
+      - name: Telegram mode pure test
+        run: python test_telegram_mode_control.py
+      - name: Execution quality regression
+        run: python test_execution_quality.py
+      - name: Final decision regression
+        run: python test_final_decision_calibration.py
+      - name: SCALP v2 regression
+        run: python test_scalp_v2.py
+      - name: Observability regression
+        run: python test_observability.py
+      - name: Transition regression
+        run: python test_transition_mode.py

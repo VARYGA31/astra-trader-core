@@ -4,6 +4,8 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 import config, cooldown, decision_context, paper_execution, risk_engine, decision_gate, mtf_gate, performance_guard
+import strategy_mode, scalp_gate
+from okx_demo_adapter import OKXDemoAdapter
 import execution_router
 import demo_ledger
 import okx_position_monitor
@@ -59,7 +61,7 @@ def prepare(asset,hours=12,strategy_mode_name=None):
         "asset":asset,
         "decision_context":c,
         "execution_mode":config.EXECUTION_MODE,
-        "timeframe":"5m" if active_mode=="SCALP" else config.TRADING_TIMEFRAME,
+        "timeframe":"5m" if active_mode in {"SCALP","AUTO"} else config.TRADING_TIMEFRAME,
         "strategy_mode":active_mode,
         "account_state":s,
         "guards":guards,
@@ -95,7 +97,8 @@ def execute(decision):
     active_mode=strategy_mode.get_mode()
     if active_mode=="PAUSED":
         return {"status":"REJECTED","reason":"STRATEGY_PAUSED"}
-    if decision_mode!=active_mode:
+    adaptive_active = bool(decision.get("adaptive_mode")) and active_mode=="AUTO"
+    if not adaptive_active and decision_mode!=active_mode:
         return {"status":"REJECTED","reason":"MODE_CHANGED_BEFORE_EXECUTION","decision_mode":decision_mode,"active_mode":active_mode}
     decision["timeframe"] = decision.get("timeframe") or ("5m" if decision_mode=="SCALP" else config.TRADING_TIMEFRAME)
     p = prepare(asset,12,decision_mode)
@@ -123,7 +126,12 @@ def execute(decision):
     if config.ONE_POSITION_PER_ASSET and g.get("asset_already_open"):
         return {"status":"REJECTED","reason":"ASSET_ALREADY_HAS_OPEN_POSITION"}
 
-    # Re-check the active strategy with FRESH data immediately before execution.
+    # Re-check FRESH market data immediately before execution.
+    #
+    # NORMAL/SCALP manual modes still require the deterministic alignment gate.
+    # AUTO/ADAPTIVE deliberately does not: the model saw the full market package
+    # and selected the strategy. Python still keeps hard anti-chase, spread,
+    # risk, exposure, R:R and execution-quality protections.
     if decision_mode=="SCALP":
         mtf=scalp_gate.evaluate(p)
         mtf_reject_reason="SCALP_NOT_ALIGNED_AT_EXECUTION"
@@ -132,21 +140,23 @@ def execute(decision):
         mtf=mtf_gate.evaluate(p)
         mtf_reject_reason="MTF_NOT_ALIGNED_AT_EXECUTION"
         chase=decision_gate.entry_guard(p,action)
-    if not mtf.get("passed"):
-        return {
-            "status":"REJECTED",
-            "reason":mtf_reject_reason,
-            "stage":"entry_quality",
-            "mtf":mtf,
-        }
-    if mtf.get("direction") != action:
-        return {
-            "status":"REJECTED",
-            "reason":"ASTRA_DIRECTION_DISAGREES_WITH_MTF",
-            "stage":"entry_quality",
-            "mtf":mtf,
-            "astra_action":action,
-        }
+
+    if not adaptive_active:
+        if not mtf.get("passed"):
+            return {
+                "status":"REJECTED",
+                "reason":mtf_reject_reason,
+                "stage":"entry_quality",
+                "mtf":mtf,
+            }
+        if mtf.get("direction") != action:
+            return {
+                "status":"REJECTED",
+                "reason":"ASTRA_DIRECTION_DISAGREES_WITH_MTF",
+                "stage":"entry_quality",
+                "mtf":mtf,
+                "astra_action":action,
+            }
 
     if chase.get("blocked"):
         return {
@@ -155,6 +165,28 @@ def execute(decision):
             "stage":"entry_quality",
             "chase_guard":chase,
         }
+
+    if adaptive_active:
+        perp_now=p.get("decision_context",{}).get("market",{}).get("perp_okx",{})
+        try:
+            bid=float(perp_now.get("bid_price")); ask=float(perp_now.get("ask_price"))
+            mid=(bid+ask)/2
+            spread_pct=(ask-bid)/mid*100 if mid>0 and ask>=bid else None
+        except Exception:
+            spread_pct=None
+        spread_max=(
+            config.ADAPTIVE_SCALP_MAX_SPREAD_PCT
+            if decision_mode=="SCALP"
+            else config.ADAPTIVE_NORMAL_MAX_SPREAD_PCT
+        )
+        if spread_pct is None or spread_pct>spread_max:
+            return {
+                "status":"REJECTED",
+                "reason":"ADAPTIVE_SPREAD_GUARD",
+                "stage":"entry_quality",
+                "spread_pct":spread_pct,
+                "maximum_pct":spread_max,
+            }
 
     # Use the ACTUAL tradable OKX swap price for final risk/R:R sizing.
     # The previous implementation used a spot/reference price, which could differ
@@ -191,10 +223,14 @@ def execute(decision):
     decision["entry"]=current
     decision["execution_reference_price"]=current
     decision["execution_price_source"]=execution_price_source
-    decision["mtf_quality"]=mtf.get("quality")
-    decision["mtf_mode"]="SCALP" if decision_mode=="SCALP" else (mtf.get("mode") or "NORMAL")
+    if adaptive_active:
+        decision["mtf_quality"]=float(decision.get("adaptive_setup_quality") or decision.get("mtf_quality") or 0)
+        decision["mtf_mode"]="SCALP" if decision_mode=="SCALP" else "NORMAL"
+    else:
+        decision["mtf_quality"]=mtf.get("quality")
+        decision["mtf_mode"]="SCALP" if decision_mode=="SCALP" else (mtf.get("mode") or "NORMAL")
     if decision_mode=="SCALP":
-        decision["scalp_tier"]=mtf.get("tier") or decision.get("scalp_tier") or "PRIME"
+        decision["scalp_tier"]=(decision.get("scalp_tier") or mtf.get("tier") or "FAST") if adaptive_active else (mtf.get("tier") or decision.get("scalp_tier") or "PRIME")
     decision["mtf_gate"]=mtf
     decision["strategy_mode"]=decision_mode
 
@@ -276,7 +312,7 @@ def execute(decision):
     if config.EXECUTION_MODE == "okx_demo":
         with strategy_mode.RUNTIME_LOCK:
             latest_mode=strategy_mode.get_mode()
-            if latest_mode!=decision_mode:
+            if not (bool(decision.get("adaptive_mode")) and latest_mode=="AUTO") and latest_mode!=decision_mode:
                 return {"status":"REJECTED","reason":"MODE_CHANGED_BEFORE_ORDER_SUBMISSION","decision_mode":decision_mode,"active_mode":latest_mode}
             return execution_router.open_trade(decision,r)
 
