@@ -8,7 +8,7 @@ PAUSED is always allowed and stops only new entries.
 import json,time
 from pathlib import Path
 import requests
-import config,strategy_mode,telegram_notifier,demo_ledger,scalp_stats,adaptive_memory
+import config,strategy_mode,telegram_notifier,demo_ledger,scalp_stats,adaptive_memory,adaptive_cost
 from okx_demo_adapter import OKXDemoAdapter
 
 API="https://api.telegram.org"
@@ -21,6 +21,7 @@ def keyboard():
             [{"text":"🟦 NORMAL"},{"text":"⚡ SCALP"},{"text":"🧠 AUTO"}],
             [{"text":"⏸ PAUSE"},{"text":"📊 STATUS"}],
             [{"text":"📈 SCALP STATS"},{"text":"🧠 BRAIN"},{"text":"🎓 LEARNING"}],
+            [{"text":"💰 COST"}],
         ],
         "resize_keyboard":True,
         "is_persistent":True,
@@ -133,10 +134,12 @@ def handle_update(update):
         _send(adaptive_memory.brain_text()); return {"status":"OK","action":"BRAIN"}
     if text.lower() in {"/learning","/learn"} or text.upper()=="🎓 LEARNING":
         _send(adaptive_memory.learning_text(168)); return {"status":"OK","action":"LEARNING"}
+    if text.lower() in {"/cost","/api_cost","/usage"} or text.upper()=="💰 COST":
+        _send(adaptive_cost.telegram_text()); return {"status":"OK","action":"COST"}
     target=parse_mode_command(text)
     if target:
         _switch(target); return {"status":"OK","action":"SWITCH","target":target}
-    _send("Команды: /normal, /scalp, /auto, /pause, /status, /mode, /scalp_stats, /brain, /learning")
+    _send("Команды: /normal, /scalp, /auto, /pause, /status, /mode, /scalp_stats, /brain, /learning, /cost")
     return {"status":"OK","action":"HELP"}
 
 def _load_offset():
