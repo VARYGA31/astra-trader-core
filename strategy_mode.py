@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Persistent single-active-strategy controller.
 
-NORMAL and SCALP are mutually exclusive. PAUSED stops only new entries;
+NORMAL, SCALP and AUTO are mutually exclusive. PAUSED stops only new entries;
 position monitoring and exchange-side protection keep running.
 """
 import json
@@ -11,7 +11,7 @@ from pathlib import Path
 import config
 
 FILE = Path(config.STATE_DIR) / "strategy_mode.json"
-ALLOWED = {"NORMAL", "SCALP", "PAUSED"}
+ALLOWED = {"NORMAL", "SCALP", "AUTO", "PAUSED"}
 RUNTIME_LOCK = threading.RLock()
 
 def _now():
@@ -38,7 +38,7 @@ def get_mode():
 
 def status():
     d=load()
-    d["allowed_modes"]=["NORMAL","SCALP","PAUSED"]
+    d["allowed_modes"]=["NORMAL","SCALP","AUTO","PAUSED"]
     return d
 
 def set_mode(mode, changed_by="SYSTEM"):
