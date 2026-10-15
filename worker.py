@@ -5,6 +5,7 @@ from datetime import datetime,timezone
 
 import config,news_listener,position_monitor,trade_cycle,paper_execution,execution_router,decision_gate,observability
 import strategy_mode,scalp_decision_gate,telegram_control,scalp_stats
+import adaptive_engine,adaptive_memory
 import position_exit_guard
 from astra_client import decide
 
@@ -32,6 +33,8 @@ R={
     "strategy_mode":strategy_mode.status(),
     "telegram_control":telegram_control.STATE,
     "scalp_stats_6h":scalp_stats.summary(6),
+    "adaptive_brain":adaptive_memory.load_brain(),
+    "adaptive_learning_7d":adaptive_memory.summary(168),
 }
 def now():return datetime.now(timezone.utc)
 
@@ -46,6 +49,8 @@ def refresh_observability():
         started=o.get("started_at_utc")
         R["performance"]=observability.trade_performance(started)
         R["scalp_stats_6h"]=scalp_stats.summary(6)
+        R["adaptive_brain"]=adaptive_memory.load_brain()
+        R["adaptive_learning_7d"]=adaptive_memory.summary(168)
     except Exception:
         # Diagnostics must never be able to degrade the trading worker.
         pass
@@ -87,6 +92,7 @@ def main():
     last_pos=0
     last_exit=0
     last_decision={a:0 for a in config.ALLOWED_ASSETS}
+    last_auto_decision=0
     last_mode=None
 
     while True:
@@ -140,37 +146,88 @@ def main():
                 last_exit=t
 
             if config.AUTO_DECISION and mode!="PAUSED":
-                assets=config.SCALP_ALLOWED_ASSETS if mode=="SCALP" else config.ALLOWED_ASSETS
-                interval=config.SCALP_DECISION_INTERVAL_SECONDS if mode=="SCALP" else config.DECISION_INTERVAL_SECONDS
-                gate_module=scalp_decision_gate if mode=="SCALP" else decision_gate
-                for a in assets:
-                    if t-last_decision.get(a,0)>=interval or a in high:
-                        p=trade_cycle.prepare(a,12,mode)
-                        gate=gate_module.evaluate(p,force_event=a in high)
-
-                        if not gate["call_model"]:
-                            d={"asset":a,"action":"WAIT","reason":gate["reason"],"gate":gate,"strategy_mode":mode}
-                            x={"status":"NO_TRADE","reason":gate["reason"]}
-                            R["model_skips"]+=1
-                        else:
-                            p["model_gate"]=gate
-                            d=decide(p)
-                            d["gate"]=gate
-                            d["strategy_mode"]=mode
-                            R["model_calls"]+=1
-                            x=trade_cycle.execute(d) if config.AUTO_PAPER_EXECUTION else {"status":"DECISION_ONLY"}
-
-                        R["last_decisions"][a]={
+                if mode=="AUTO":
+                    force_auto=any(a in high for a in config.ADAPTIVE_ALLOWED_ASSETS)
+                    if t-last_auto_decision>=config.ADAPTIVE_DECISION_INTERVAL_SECONDS or force_auto:
+                        ar=adaptive_engine.run_once(force=force_auto)
+                        R["last_adaptive_cycle"]={
                             "at_utc":now().isoformat(),
-                            "strategy_mode":mode,
-                            "decision":d,
-                            "execution":x,
+                            "status":ar.get("status"),
+                            "reason":ar.get("reason"),
+                            "result":ar.get("result"),
+                            "execution":ar.get("execution"),
+                            "learning":ar.get("learning"),
                         }
-                        observability.record_decision(p,gate,d,x,model_called=bool(gate.get("call_model")))
-                        if mode=="SCALP":
-                            scalp_stats.record(p,gate,d,x,model_called=bool(gate.get("call_model")))
+                        if ar.get("status")=="OK":
+                            R["model_calls"]+=1
+                            d=ar.get("decision") or {}
+                            x=ar.get("execution") or {"status":"NO_TRADE","reason":"ADAPTIVE_WAIT"}
+                            best=(ar.get("result") or {}).get("best_opportunity") or {}
+                            a=str(best.get("asset") or d.get("asset") or "MULTI").upper()
+                            R["last_decisions"]["AUTO"]={
+                                "at_utc":now().isoformat(),
+                                "strategy_mode":"AUTO",
+                                "decision":d,
+                                "execution":x,
+                                "brain":ar.get("result"),
+                            }
+                            p=(ar.get("packages") or {}).get(a)
+                            if p:
+                                gate={
+                                    "call_model":True,
+                                    "reason":"ADAPTIVE_MULTI_ASSET",
+                                    "allowed_direction":best.get("action") if best.get("action") in {"LONG","SHORT"} else None,
+                                    "mtf_quality":best.get("setup_quality"),
+                                    "mtf_mode":best.get("strategy"),
+                                    "mtf":{
+                                        "passed":best.get("action") in {"LONG","SHORT"},
+                                        "direction":best.get("action"),
+                                        "mode":best.get("strategy"),
+                                        "quality":best.get("setup_quality"),
+                                        "minimum_quality":(
+                                            config.ADAPTIVE_MIN_SCALP_QUALITY
+                                            if best.get("strategy")=="SCALP"
+                                            else config.ADAPTIVE_MIN_NORMAL_QUALITY
+                                        ),
+                                    },
+                                }
+                                observability.record_decision(p,gate,d,x,model_called=True)
+                        elif ar.get("reason")=="SAME_5M_CANDLE":
+                            R["model_skips"]+=1
                         refresh_observability()
-                        last_decision[a]=t
+                        last_auto_decision=t
+                else:
+                    assets=config.SCALP_ALLOWED_ASSETS if mode=="SCALP" else config.ALLOWED_ASSETS
+                    interval=config.SCALP_DECISION_INTERVAL_SECONDS if mode=="SCALP" else config.DECISION_INTERVAL_SECONDS
+                    gate_module=scalp_decision_gate if mode=="SCALP" else decision_gate
+                    for a in assets:
+                        if t-last_decision.get(a,0)>=interval or a in high:
+                            p=trade_cycle.prepare(a,12,mode)
+                            gate=gate_module.evaluate(p,force_event=a in high)
+
+                            if not gate["call_model"]:
+                                d={"asset":a,"action":"WAIT","reason":gate["reason"],"gate":gate,"strategy_mode":mode}
+                                x={"status":"NO_TRADE","reason":gate["reason"]}
+                                R["model_skips"]+=1
+                            else:
+                                p["model_gate"]=gate
+                                d=decide(p)
+                                d["gate"]=gate
+                                d["strategy_mode"]=mode
+                                R["model_calls"]+=1
+                                x=trade_cycle.execute(d) if config.AUTO_PAPER_EXECUTION else {"status":"DECISION_ONLY"}
+
+                            R["last_decisions"][a]={
+                                "at_utc":now().isoformat(),
+                                "strategy_mode":mode,
+                                "decision":d,
+                                "execution":x,
+                            }
+                            observability.record_decision(p,gate,d,x,model_called=bool(gate.get("call_model")))
+                            if mode=="SCALP":
+                                scalp_stats.record(p,gate,d,x,model_called=bool(gate.get("call_model")))
+                            refresh_observability()
+                            last_decision[a]=t
 
             R["status"]="ok"
             R["last_error"]=None
