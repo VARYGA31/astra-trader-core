@@ -228,3 +228,28 @@ SCALP_FAST_MAX_LEVERAGE = float(os.getenv("SCALP_FAST_MAX_LEVERAGE", "3"))
 # Persistent diagnostics used by /scalp_stats.
 SCALP_STATS_LOG_MAX_MB = float(os.getenv("SCALP_STATS_LOG_MAX_MB", "10"))
 SCALP_STATS_DEFAULT_HOURS = int(os.getenv("SCALP_STATS_DEFAULT_HOURS", "6"))
+
+
+# ===== ASTRA ADAPTIVE v1 =====
+# AUTO mode asks one multi-asset strategist to rank BTC/ETH/GRAM on each new
+# confirmed 5m candle. Python risk/execution remains the final authority.
+ADAPTIVE_ALLOWED_ASSETS = tuple(
+    x.strip().upper() for x in os.getenv("ADAPTIVE_ALLOWED_ASSETS", "BTC,ETH,GRAM").split(",") if x.strip()
+)
+ADAPTIVE_DECISION_INTERVAL_SECONDS = int(os.getenv("ADAPTIVE_DECISION_INTERVAL_SECONDS", "60"))
+ADAPTIVE_NEWS_HOURS = int(os.getenv("ADAPTIVE_NEWS_HOURS", "12"))
+ADAPTIVE_MEMORY_EXAMPLES = int(os.getenv("ADAPTIVE_MEMORY_EXAMPLES", "12"))
+ADAPTIVE_OUTCOME_HORIZONS_MINUTES = tuple(
+    int(x.strip()) for x in os.getenv("ADAPTIVE_OUTCOME_HORIZONS_MINUTES", "15,30,60,120").split(",") if x.strip()
+)
+ADAPTIVE_OUTCOME_EVAL_BATCH = int(os.getenv("ADAPTIVE_OUTCOME_EVAL_BATCH", "24"))
+ADAPTIVE_MISSED_MOVE_SCALP_PCT = float(os.getenv("ADAPTIVE_MISSED_MOVE_SCALP_PCT", "0.35"))
+ADAPTIVE_MISSED_MOVE_NORMAL_PCT = float(os.getenv("ADAPTIVE_MISSED_MOVE_NORMAL_PCT", "0.90"))
+ADAPTIVE_LOG_MAX_MB = float(os.getenv("ADAPTIVE_LOG_MAX_MB", "20"))
+
+# Independent adaptive safety checks. These do not create signals; they only
+# reject unsafe execution after the model proposes a trade.
+ADAPTIVE_SCALP_MAX_SPREAD_PCT = float(os.getenv("ADAPTIVE_SCALP_MAX_SPREAD_PCT", "0.10"))
+ADAPTIVE_NORMAL_MAX_SPREAD_PCT = float(os.getenv("ADAPTIVE_NORMAL_MAX_SPREAD_PCT", "0.18"))
+ADAPTIVE_MIN_NORMAL_QUALITY = float(os.getenv("ADAPTIVE_MIN_NORMAL_QUALITY", "72"))
+ADAPTIVE_MIN_SCALP_QUALITY = float(os.getenv("ADAPTIVE_MIN_SCALP_QUALITY", "64"))
