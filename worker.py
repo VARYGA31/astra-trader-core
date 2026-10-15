@@ -149,6 +149,9 @@ def main():
                 if mode=="AUTO":
                     force_auto=any(a in high for a in config.ADAPTIVE_ALLOWED_ASSETS)
                     if t-last_auto_decision>=config.ADAPTIVE_DECISION_INTERVAL_SECONDS or force_auto:
+                        # Throttle before the model call so a transient API/JSON
+                        # failure cannot trigger a retry storm every worker tick.
+                        last_auto_decision=t
                         ar=adaptive_engine.run_once(force=force_auto)
                         R["last_adaptive_cycle"]={
                             "at_utc":now().isoformat(),
@@ -195,7 +198,6 @@ def main():
                         elif ar.get("reason")=="SAME_5M_CANDLE":
                             R["model_skips"]+=1
                         refresh_observability()
-                        last_auto_decision=t
                 else:
                     assets=config.SCALP_ALLOWED_ASSETS if mode=="SCALP" else config.ALLOWED_ASSETS
                     interval=config.SCALP_DECISION_INTERVAL_SECONDS if mode=="SCALP" else config.DECISION_INTERVAL_SECONDS
