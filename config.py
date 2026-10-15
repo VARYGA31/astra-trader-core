@@ -253,3 +253,24 @@ ADAPTIVE_SCALP_MAX_SPREAD_PCT = float(os.getenv("ADAPTIVE_SCALP_MAX_SPREAD_PCT",
 ADAPTIVE_NORMAL_MAX_SPREAD_PCT = float(os.getenv("ADAPTIVE_NORMAL_MAX_SPREAD_PCT", "0.18"))
 ADAPTIVE_MIN_NORMAL_QUALITY = float(os.getenv("ADAPTIVE_MIN_NORMAL_QUALITY", "72"))
 ADAPTIVE_MIN_SCALP_QUALITY = float(os.getenv("ADAPTIVE_MIN_SCALP_QUALITY", "64"))
+
+
+# ===== ASTRA ADAPTIVE Cost-Smart v1 =====
+# Local market scans stay on every new 5m candle, but expensive GPT-6 Astra
+# calls are scheduled by baseline interval + opportunity triggers + daily caps.
+ADAPTIVE_COST_SMART_ENABLED = os.getenv("ADAPTIVE_COST_SMART_ENABLED", "true").lower() == "true"
+ADAPTIVE_BASE_MODEL_INTERVAL_MINUTES = int(os.getenv("ADAPTIVE_BASE_MODEL_INTERVAL_MINUTES", "30"))
+ADAPTIVE_TRIGGER_MIN_GAP_MINUTES = int(os.getenv("ADAPTIVE_TRIGGER_MIN_GAP_MINUTES", "10"))
+ADAPTIVE_TRIGGER_SCORE = float(os.getenv("ADAPTIVE_TRIGGER_SCORE", "4.2"))
+ADAPTIVE_TRIGGER_5M_MOVE_PCT = float(os.getenv("ADAPTIVE_TRIGGER_5M_MOVE_PCT", "0.18"))
+ADAPTIVE_TRIGGER_MAX_SPREAD_PCT = float(os.getenv("ADAPTIVE_TRIGGER_MAX_SPREAD_PCT", "0.08"))
+ADAPTIVE_MAX_MODEL_CALLS_PER_DAY = int(os.getenv("ADAPTIVE_MAX_MODEL_CALLS_PER_DAY", "60"))
+ADAPTIVE_MAX_ESTIMATED_USD_PER_DAY = float(os.getenv("ADAPTIVE_MAX_ESTIMATED_USD_PER_DAY", "2.50"))
+ADAPTIVE_MAX_NEWS_EVENTS = int(os.getenv("ADAPTIVE_MAX_NEWS_EVENTS", "4"))
+ADAPTIVE_MODEL_MAX_OUTPUT_TOKENS = int(os.getenv("ADAPTIVE_MODEL_MAX_OUTPUT_TOKENS", "1400"))
+
+# Current Standard short-context GPT-6 Astra rates. Kept configurable so the
+# estimator can be updated without a code deploy if API pricing changes.
+ADAPTIVE_PRICE_INPUT_USD_PER_M = float(os.getenv("ADAPTIVE_PRICE_INPUT_USD_PER_M", "10.0"))
+ADAPTIVE_PRICE_CACHED_INPUT_USD_PER_M = float(os.getenv("ADAPTIVE_PRICE_CACHED_INPUT_USD_PER_M", "1.0"))
+ADAPTIVE_PRICE_OUTPUT_USD_PER_M = float(os.getenv("ADAPTIVE_PRICE_OUTPUT_USD_PER_M", "50.0"))
