@@ -25,6 +25,8 @@ jobs:
         run: python test_adaptive_mode.py
       - name: Adaptive Cost-Smart pure test
         run: python test_adaptive_cost.py
+      - name: AUTO v1.1 regression
+        run: python test_adaptive_auto_v11.py
       - name: Telegram mode pure test
         run: python test_telegram_mode_control.py
       - name: Execution quality regression
