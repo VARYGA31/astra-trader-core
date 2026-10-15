@@ -8,7 +8,7 @@ PAUSED is always allowed and stops only new entries.
 import json,time
 from pathlib import Path
 import requests
-import config,strategy_mode,telegram_notifier,demo_ledger,scalp_stats
+import config,strategy_mode,telegram_notifier,demo_ledger,scalp_stats,adaptive_memory
 from okx_demo_adapter import OKXDemoAdapter
 
 API="https://api.telegram.org"
@@ -18,9 +18,9 @@ STATE={"status":"STARTING","last_error":None,"last_command":None,"last_update_id
 def keyboard():
     return {
         "keyboard":[
-            [{"text":"🟦 NORMAL"},{"text":"⚡ SCALP"}],
+            [{"text":"🟦 NORMAL"},{"text":"⚡ SCALP"},{"text":"🧠 AUTO"}],
             [{"text":"⏸ PAUSE"},{"text":"📊 STATUS"}],
-            [{"text":"📈 SCALP STATS"}],
+            [{"text":"📈 SCALP STATS"},{"text":"🧠 BRAIN"},{"text":"🎓 LEARNING"}],
         ],
         "resize_keyboard":True,
         "is_persistent":True,
@@ -31,6 +31,7 @@ def parse_mode_command(text):
     mapping={
         "/NORMAL":"NORMAL","/MODE_NORMAL":"NORMAL","🟦 NORMAL":"NORMAL","NORMAL":"NORMAL",
         "/SCALP":"SCALP","/MODE_SCALP":"SCALP","⚡ SCALP":"SCALP","SCALP":"SCALP",
+        "/AUTO":"AUTO","/MODE_AUTO":"AUTO","🧠 AUTO":"AUTO","AUTO":"AUTO",
         "/PAUSE":"PAUSED","⏸ PAUSE":"PAUSED","PAUSE":"PAUSED","PAUSED":"PAUSED",
     }
     return mapping.get(t)
@@ -45,7 +46,7 @@ def _summary():
     try: ledger=demo_ledger.status()
     except Exception: ledger={}
     auto="ON" if config.AUTO_DECISION else "OFF"
-    icon="⚡" if mode=="SCALP" else "🟦" if mode=="NORMAL" else "⏸"
+    icon="⚡" if mode=="SCALP" else "🟦" if mode=="NORMAL" else "🧠" if mode=="AUTO" else "⏸"
     return (
         f"🎛 <b>ASTRA CONTROL</b>\n\n"
         f"Активный режим: {icon} <b>{mode}</b>\n"
@@ -55,6 +56,7 @@ def _summary():
         f"Demo equity: <b>${float(ledger.get('equity') or 0):.2f}</b>\n\n"
         f"🟦 NORMAL: 4H → 1H → 15M\n"
         f"⚡ SCALP: 1H → 15M → 5M (BTC/ETH/GRAM)\n"
+        f"🧠 AUTO: ASTRA сама выбирает NORMAL / SCALP / WAIT по BTC/ETH/GRAM\n"
         f"⏸ PAUSE: новые входы выключены, защита открытой позиции продолжает работать."
     )
 
@@ -110,7 +112,7 @@ def _switch(target,source="TELEGRAM"):
                 )
             return _send(f"⚠️ Режим не изменён: {chk.get('reason')}")
         strategy_mode.set_mode(target,changed_by=source)
-        icon="⚡" if target=="SCALP" else "🟦" if target=="NORMAL" else "⏸"
+        icon="⚡" if target=="SCALP" else "🟦" if target=="NORMAL" else "🧠" if target=="AUTO" else "⏸"
         return _send(f"{icon} <b>ASTRA {target} ACTIVATED</b>\n\nРежим сохранён в /data и переживёт Redeploy.")
 
 def handle_update(update):
@@ -127,10 +129,14 @@ def handle_update(update):
         _send(_summary()); return {"status":"OK","action":"STATUS"}
     if text.lower() in {"/scalp_stats","/scalpstats"} or text.upper()=="📈 SCALP STATS":
         _send(_scalp_stats_text(6)); return {"status":"OK","action":"SCALP_STATS"}
+    if text.lower() in {"/brain","/astra_brain"} or text.upper()=="🧠 BRAIN":
+        _send(adaptive_memory.brain_text()); return {"status":"OK","action":"BRAIN"}
+    if text.lower() in {"/learning","/learn"} or text.upper()=="🎓 LEARNING":
+        _send(adaptive_memory.learning_text(168)); return {"status":"OK","action":"LEARNING"}
     target=parse_mode_command(text)
     if target:
         _switch(target); return {"status":"OK","action":"SWITCH","target":target}
-    _send("Команды: /normal, /scalp, /pause, /status, /mode, /scalp_stats")
+    _send("Команды: /normal, /scalp, /auto, /pause, /status, /mode, /scalp_stats, /brain, /learning")
     return {"status":"OK","action":"HELP"}
 
 def _load_offset():
