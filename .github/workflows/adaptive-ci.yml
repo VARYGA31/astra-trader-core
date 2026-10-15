@@ -23,6 +23,8 @@ jobs:
         run: python repo_selfcheck.py
       - name: Adaptive mode pure test
         run: python test_adaptive_mode.py
+      - name: Adaptive Cost-Smart pure test
+        run: python test_adaptive_cost.py
       - name: Telegram mode pure test
         run: python test_telegram_mode_control.py
       - name: Execution quality regression

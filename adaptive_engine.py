@@ -15,6 +15,7 @@ import config
 import trade_cycle
 import adaptive_client
 import adaptive_memory
+import adaptive_cost
 
 STATE=Path(config.STATE_DIR)/"adaptive_cycle_state.json"
 
@@ -57,12 +58,18 @@ def should_run(packages, force=False):
     changed=any(current.get(a) is not None and current.get(a)!=old.get(a) for a in current)
     return changed, "NEW_5M_CANDLE" if changed else "SAME_5M_CANDLE"
 
-def _mark(packages,result=None):
-    _save_state({
+def _mark(packages,result=None,model_called=False,plan=None):
+    old=_load_state()
+    x={
+        **old,
         "last_5m_candles":{a:_candle_id(p) for a,p in packages.items()},
         "last_cycle_at_utc":datetime.now(timezone.utc).isoformat(),
         "last_cycle_id":(result or {}).get("cycle_id"),
-    })
+        "last_cost_plan":plan,
+    }
+    if model_called:
+        x["last_model_call_at_utc"]=datetime.now(timezone.utc).isoformat()
+    _save_state(x)
 
 def _decision_from_best(best, package):
     strategy=str(best.get("strategy") or "WAIT").upper()
@@ -106,11 +113,28 @@ def run_once(force=False):
             "reason":reason,
             "packages":packages,
             "hard_guards":_hard_guard_summary(packages),
+            "cost":adaptive_cost.budget_status(),
         }
+
+    if config.ADAPTIVE_COST_SMART_ENABLED:
+        plan=adaptive_cost.plan(packages,_load_state(),force=force)
+        if not plan.get("call_model"):
+            _mark(packages,None,model_called=False,plan=plan)
+            learning=adaptive_memory.evaluate_due()
+            return {
+                "status":"SKIPPED",
+                "reason":plan.get("reason") or "COST_SMART_WAIT",
+                "packages":packages,
+                "hard_guards":_hard_guard_summary(packages),
+                "cost_plan":plan,
+                "learning":learning,
+            }
+    else:
+        plan={"call_model":True,"reason":"COST_SMART_DISABLED"}
 
     result=adaptive_client.decide_market(packages)
     adaptive_memory.record_cycle(result,packages)
-    _mark(packages,result)
+    _mark(packages,result,model_called=True,plan=plan)
 
     best=result.get("best_opportunity") or {}
     action=str(best.get("action") or "WAIT").upper()
@@ -139,4 +163,6 @@ def run_once(force=False):
         "packages":packages,
         "learning":learning,
         "hard_guards":_hard_guard_summary(packages),
+        "cost_plan":plan,
+        "cost":adaptive_cost.usage_today(),
     }
