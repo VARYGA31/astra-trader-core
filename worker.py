@@ -5,7 +5,7 @@ from datetime import datetime,timezone
 
 import config,news_listener,position_monitor,trade_cycle,paper_execution,execution_router,decision_gate,observability
 import strategy_mode,scalp_decision_gate,telegram_control,scalp_stats
-import adaptive_engine,adaptive_memory
+import adaptive_engine,adaptive_memory,adaptive_cost
 import position_exit_guard
 from astra_client import decide
 
@@ -35,6 +35,7 @@ R={
     "scalp_stats_6h":scalp_stats.summary(6),
     "adaptive_brain":adaptive_memory.load_brain(),
     "adaptive_learning_7d":adaptive_memory.summary(168),
+    "adaptive_cost_today":adaptive_cost.usage_today(),
 }
 def now():return datetime.now(timezone.utc)
 
@@ -51,6 +52,7 @@ def refresh_observability():
         R["scalp_stats_6h"]=scalp_stats.summary(6)
         R["adaptive_brain"]=adaptive_memory.load_brain()
         R["adaptive_learning_7d"]=adaptive_memory.summary(168)
+        R["adaptive_cost_today"]=adaptive_cost.usage_today()
     except Exception:
         # Diagnostics must never be able to degrade the trading worker.
         pass
@@ -195,7 +197,7 @@ def main():
                                     },
                                 }
                                 observability.record_decision(p,gate,d,x,model_called=True)
-                        elif ar.get("reason")=="SAME_5M_CANDLE":
+                        else:
                             R["model_skips"]+=1
                         refresh_observability()
                 else:
