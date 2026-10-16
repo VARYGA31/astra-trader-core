@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Multi-asset strategist for ASTRA ADAPTIVE v1.
+"""Multi-asset strategist for ASTRA ADAPTIVE Trainer v2.
 
 One model call ranks the allowed crypto assets together. Python remains the
 independent safety/risk/execution authority.
