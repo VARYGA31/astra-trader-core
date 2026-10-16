@@ -5,7 +5,7 @@ from datetime import datetime,timezone
 
 import config,news_listener,position_monitor,trade_cycle,paper_execution,execution_router,decision_gate,observability
 import strategy_mode,scalp_decision_gate,telegram_control,scalp_stats
-import adaptive_engine,adaptive_memory,adaptive_cost,adaptive_stats
+import adaptive_engine,adaptive_memory,adaptive_cost,adaptive_stats,adaptive_trainer
 import position_exit_guard
 from astra_client import decide
 
@@ -36,6 +36,7 @@ R={
     "adaptive_brain":adaptive_memory.load_brain(),
     "adaptive_learning_7d":adaptive_memory.summary(168),
     "adaptive_cost_today":adaptive_cost.usage_today(),
+    "adaptive_trainer_7d":adaptive_trainer.summary(168),
 }
 def now():return datetime.now(timezone.utc)
 
@@ -54,6 +55,7 @@ def refresh_observability():
         R["adaptive_learning_7d"]=adaptive_memory.summary(168)
         R["adaptive_cost_today"]=adaptive_cost.usage_today()
         R["adaptive_auto_stats_24h"]=adaptive_stats.summary(24)
+        R["adaptive_trainer_7d"]=adaptive_trainer.summary(168)
     except Exception:
         # Diagnostics must never be able to degrade the trading worker.
         pass
@@ -164,6 +166,12 @@ def main():
                             "result":ar.get("result"),
                             "execution":ar.get("execution"),
                             "learning":ar.get("learning"),
+                            "trainer":{
+                                "best":(ar.get("trainer") or {}).get("best"),
+                                "summary":(ar.get("trainer") or {}).get("summary"),
+                                "recorded":(ar.get("trainer") or {}).get("recorded"),
+                                "evaluated":(ar.get("trainer") or {}).get("evaluated"),
+                            } if ar.get("trainer") else None,
                         }
                         if ar.get("status")=="OK":
                             R["model_calls"]+=1
