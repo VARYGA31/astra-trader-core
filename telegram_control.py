@@ -8,21 +8,47 @@ PAUSED is always allowed and stops only new entries.
 import json,time
 from pathlib import Path
 import requests
-import config,strategy_mode,telegram_notifier,demo_ledger,scalp_stats,adaptive_memory,adaptive_cost,adaptive_stats,adaptive_trainer
+import config,strategy_mode,telegram_notifier,demo_ledger,scalp_stats,adaptive_memory,adaptive_cost,adaptive_stats,adaptive_trainer,multi_market_trainer
 from okx_demo_adapter import OKXDemoAdapter
 
 API="https://api.telegram.org"
 OFFSET_FILE=Path(config.STATE_DIR)/"telegram_control_offset.json"
 STATE={"status":"STARTING","last_error":None,"last_command":None,"last_update_id":None}
 
-def keyboard():
-    return {
-        "keyboard":[
+def keyboard(section="MAIN"):
+    section=str(section or "MAIN").upper()
+    if section=="MODES":
+        rows=[
             [{"text":"🟦 NORMAL"},{"text":"⚡ SCALP"},{"text":"🧠 AUTO"}],
+            [{"text":"⏸ PAUSE"}],
+            [{"text":"⬅️ ГЛАВНАЯ"}],
+        ]
+    elif section=="MONITOR":
+        rows=[
+            [{"text":"📊 STATUS"},{"text":"💰 COST"}],
+            [{"text":"📊 AUTO STATS"},{"text":"📈 SCALP STATS"}],
+            [{"text":"⬅️ ГЛАВНАЯ"}],
+        ]
+    elif section=="LEARNING":
+        rows=[
+            [{"text":"🧪 CRYPTO TRAINER"},{"text":"🌐 LAB OVERVIEW"}],
+            [{"text":"🧠 BRAIN"},{"text":"🎓 LEARNING"}],
+            [{"text":"⬅️ ГЛАВНАЯ"}],
+        ]
+    elif section=="MARKETS":
+        rows=[
+            [{"text":"🥇 GOLD LAB"},{"text":"🟣 DEFI LAB"}],
+            [{"text":"🌐 LAB OVERVIEW"}],
+            [{"text":"⬅️ ГЛАВНАЯ"}],
+        ]
+    else:
+        rows=[
+            [{"text":"🎛 РЕЖИМЫ"},{"text":"📊 МОНИТОРИНГ"}],
+            [{"text":"🧪 ОБУЧЕНИЕ"},{"text":"🌐 РЫНКИ"}],
             [{"text":"⏸ PAUSE"},{"text":"📊 STATUS"}],
-            [{"text":"📈 SCALP STATS"},{"text":"🧠 BRAIN"},{"text":"🎓 LEARNING"}],
-            [{"text":"💰 COST"},{"text":"📊 AUTO STATS"},{"text":"🧪 TRAINER"}],
-        ],
+        ]
+    return {
+        "keyboard":rows,
         "resize_keyboard":True,
         "is_persistent":True,
     }
@@ -89,8 +115,8 @@ def _scalp_stats_text(hours=6):
     if not shown: lines.append("• пока данных недостаточно")
     return "\n".join(lines)
 
-def _send(text):
-    return telegram_notifier.send_text(text,reply_markup=keyboard())
+def _send(text,section="MAIN"):
+    return telegram_notifier.send_text(text,reply_markup=keyboard(section))
 
 def _switch(target,source="TELEGRAM"):
     # Share one in-process lock with execution. If an order is currently being
@@ -102,19 +128,20 @@ def _switch(target,source="TELEGRAM"):
             ex=OKXDemoAdapter().exchange_active_summary()
             open_positions=int(ex.get("open_positions",0))
         except Exception as e:
-            return _send(f"⚠️ Не могу безопасно сменить режим: не удалось проверить позиции OKX.\n<code>{str(e)}</code>")
+            return _send(f"⚠️ Не могу безопасно сменить режим: не удалось проверить позиции OKX.\n<code>{str(e)}</code>","MODES")
         chk=strategy_mode.switch_check(current,target,open_positions)
         if not chk.get("allowed"):
             if chk.get("reason")=="OPEN_POSITION_EXISTS":
                 return _send(
                     f"⚠️ Переключение <b>{current} → {target}</b> отклонено.\n"
                     f"Сначала должна закрыться текущая позиция OKX.\n"
-                    f"Можно нажать ⏸ PAUSE — мониторинг/SL/TP останутся активны."
+                    f"Можно нажать ⏸ PAUSE — мониторинг/SL/TP останутся активны.",
+                    "MODES"
                 )
-            return _send(f"⚠️ Режим не изменён: {chk.get('reason')}")
+            return _send(f"⚠️ Режим не изменён: {chk.get('reason')}","MODES")
         strategy_mode.set_mode(target,changed_by=source)
         icon="⚡" if target=="SCALP" else "🟦" if target=="NORMAL" else "🧠" if target=="AUTO" else "⏸"
-        return _send(f"{icon} <b>ASTRA {target} ACTIVATED</b>\n\nРежим сохранён в /data и переживёт Redeploy.")
+        return _send(f"{icon} <b>ASTRA {target} ACTIVATED</b>\n\nРежим сохранён в /data и переживёт Redeploy.","MODES")
 
 def handle_update(update):
     msg=update.get("message") or {}
@@ -123,27 +150,59 @@ def handle_update(update):
     if not _authorized(chat_id):
         return {"status":"IGNORED_UNAUTHORIZED"}
     text=str(msg.get("text") or "").strip()
+    upper=text.upper()
+    lower=text.lower()
     STATE["last_command"]=text
-    if text.lower() in {"/start","/mode","/help"} or text.upper()=="🎛 MODE":
-        _send(_summary()); return {"status":"OK","action":"STATUS"}
-    if text.lower()=="/status" or text.upper()=="📊 STATUS":
-        _send(_summary()); return {"status":"OK","action":"STATUS"}
-    if text.lower() in {"/scalp_stats","/scalpstats"} or text.upper()=="📈 SCALP STATS":
-        _send(_scalp_stats_text(6)); return {"status":"OK","action":"SCALP_STATS"}
-    if text.lower() in {"/brain","/astra_brain"} or text.upper()=="🧠 BRAIN":
-        _send(adaptive_memory.brain_text()); return {"status":"OK","action":"BRAIN"}
-    if text.lower() in {"/learning","/learn"} or text.upper()=="🎓 LEARNING":
-        _send(adaptive_memory.learning_text(168)); return {"status":"OK","action":"LEARNING"}
-    if text.lower() in {"/cost","/api_cost","/usage"} or text.upper()=="💰 COST":
-        _send(adaptive_cost.telegram_text()); return {"status":"OK","action":"COST"}
-    if text.lower() in {"/auto_stats","/autostats","/auto_funnel"} or text.upper()=="📊 AUTO STATS":
-        _send(adaptive_stats.telegram_text(24)); return {"status":"OK","action":"AUTO_STATS"}
-    if text.lower() in {"/trainer","/train","/trainer_stats"} or text.upper()=="🧪 TRAINER":
-        _send(adaptive_trainer.telegram_text(168)); return {"status":"OK","action":"TRAINER"}
+
+    if upper=="⬅️ ГЛАВНАЯ" or lower in {"/menu","/start"}:
+        _send(_summary(),"MAIN"); return {"status":"OK","action":"MAIN_MENU"}
+
+    if upper=="🎛 РЕЖИМЫ":
+        _send("🎛 <b>РЕЖИМЫ ASTRA</b>\n\nВыбери режим торговли. PAUSE блокирует только новые входы.","MODES")
+        return {"status":"OK","action":"MENU_MODES"}
+    if upper=="📊 МОНИТОРИНГ":
+        _send("📊 <b>МОНИТОРИНГ</b>\n\nСтатус, расходы API и воронка решений.","MONITOR")
+        return {"status":"OK","action":"MENU_MONITOR"}
+    if upper=="🧪 ОБУЧЕНИЕ":
+        _send("🧪 <b>ОБУЧЕНИЕ ASTRA</b>\n\nCrypto Trainer, внешняя память и Multi-Market Lab.","LEARNING")
+        return {"status":"OK","action":"MENU_LEARNING"}
+    if upper=="🌐 РЫНКИ":
+        _send("🌐 <b>РЫНКИ-ЛАБОРАТОРИИ</b>\n\nGold и DeFi сейчас обучаются только на shadow-сделках.","MARKETS")
+        return {"status":"OK","action":"MENU_MARKETS"}
+
+    if lower in {"/mode","/help"} or upper=="🎛 MODE":
+        _send(_summary(),"MAIN"); return {"status":"OK","action":"STATUS"}
+    if lower=="/status" or upper=="📊 STATUS":
+        _send(_summary(),"MONITOR"); return {"status":"OK","action":"STATUS"}
+    if lower in {"/scalp_stats","/scalpstats"} or upper=="📈 SCALP STATS":
+        _send(_scalp_stats_text(6),"MONITOR"); return {"status":"OK","action":"SCALP_STATS"}
+    if lower in {"/brain","/astra_brain"} or upper=="🧠 BRAIN":
+        _send(adaptive_memory.brain_text(),"LEARNING"); return {"status":"OK","action":"BRAIN"}
+    if lower in {"/learning","/learn"} or upper=="🎓 LEARNING":
+        _send(adaptive_memory.learning_text(168),"LEARNING"); return {"status":"OK","action":"LEARNING"}
+    if lower in {"/cost","/api_cost","/usage"} or upper=="💰 COST":
+        _send(adaptive_cost.telegram_text(),"MONITOR"); return {"status":"OK","action":"COST"}
+    if lower in {"/auto_stats","/autostats","/auto_funnel"} or upper=="📊 AUTO STATS":
+        _send(adaptive_stats.telegram_text(24),"MONITOR"); return {"status":"OK","action":"AUTO_STATS"}
+    if lower in {"/trainer","/train","/trainer_stats"} or upper in {"🧪 TRAINER","🧪 CRYPTO TRAINER"}:
+        _send(adaptive_trainer.telegram_text(168),"LEARNING"); return {"status":"OK","action":"TRAINER"}
+    if lower in {"/lab","/markets","/lab_stats"} or upper=="🌐 LAB OVERVIEW":
+        _send(multi_market_trainer.telegram_text(168),"MARKETS"); return {"status":"OK","action":"LAB"}
+    if lower in {"/gold","/gold_lab"} or upper=="🥇 GOLD LAB":
+        _send(multi_market_trainer.gold_text(168),"MARKETS"); return {"status":"OK","action":"GOLD_LAB"}
+    if lower in {"/defi","/defi_lab"} or upper=="🟣 DEFI LAB":
+        _send(multi_market_trainer.defi_text(168),"MARKETS"); return {"status":"OK","action":"DEFI_LAB"}
+
     target=parse_mode_command(text)
     if target:
         _switch(target); return {"status":"OK","action":"SWITCH","target":target}
-    _send("Команды: /normal, /scalp, /auto, /pause, /status, /mode, /scalp_stats, /auto_stats, /trainer, /brain, /learning, /cost")
+
+    _send(
+        "Главное меню: 🎛 РЕЖИМЫ · 📊 МОНИТОРИНГ · 🧪 ОБУЧЕНИЕ · 🌐 РЫНКИ\n"
+        "Команды: /normal /scalp /auto /pause /status /cost /auto_stats "
+        "/scalp_stats /trainer /lab /gold /defi /brain /learning",
+        "MAIN"
+    )
     return {"status":"OK","action":"HELP"}
 
 def _load_offset():
@@ -181,7 +240,7 @@ def run_forever():
                 offset=max(int(x.get("update_id",0)) for x in old)+1
                 _save_offset(offset)
         STATE.update({"status":"OK","last_error":None})
-        _send("🎛 <b>ASTRA Telegram control online</b>\n\n"+_summary())
+        _send("🎛 <b>ASTRA Telegram control online</b>\n\n"+_summary(),"MAIN")
     except Exception as e:
         STATE.update({"status":"DEGRADED","last_error":str(e)})
 
