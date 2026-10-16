@@ -504,6 +504,40 @@ def summary(hours=168):
         },
     }
 
+def gold_text(hours=168):
+    s=summary(hours)
+    g=(s.get("groups") or {}).get("GOLD",{})
+    labels=(s.get("labels") or {}).get("GOLD",{})
+    x=(s.get("assets") or {}).get("XAU",{})
+    return "\n".join([
+        f"🥇 <b>GOLD TRAINER — {int(float(hours))}h</b>","",
+        f"Shadow: <b>{g.get('shadow',0)}</b>",
+        f"Evaluated: <b>{g.get('evaluated',0)}</b>",
+        f"XAU NET R: <b>{x.get('avg_net_r',g.get('avg_net_r',0)):.3f}R</b>",
+        f"Gross / friction: <b>{g.get('avg_gross_r',0):.3f}R / {g.get('avg_cost_r',0):.3f}R</b>",
+        f"TP2: <b>{labels.get('TP2_HIT',0)}</b> | Stops: <b>{labels.get('STOP_HIT',0)}</b>","",
+        "Gold сейчас shadow-only в Trainer v3: наблюдает XAU, macro/yields и новости, но из AUTO ордера не открывает.",
+    ])
+
+def defi_text(hours=168):
+    s=summary(hours)
+    g=(s.get("groups") or {}).get("DEFI",{})
+    u=s.get("defi_universe") or {}
+    lines=[
+        f"🟣 <b>DEFI TRAINER — {int(float(hours))}h</b>","",
+        "Dynamic universe: <b>"+(", ".join(u.get("selected_assets") or []) or "—")+"</b>",
+        f"Shadow: <b>{g.get('shadow',0)}</b> | Evaluated: <b>{g.get('evaluated',0)}</b>",
+        f"NET R: <b>{g.get('avg_net_r',0):.3f}R</b> | Friction: <b>{g.get('avg_cost_r',0):.3f}R</b>","",
+        "<b>By asset:</b>",
+    ]
+    shown=0
+    for a,v in sorted((s.get("assets") or {}).items()):
+        if a in set(config.DEFI_LAB_WATCHLIST):
+            lines.append(f"• {a}: {v.get('samples',0)} | {v.get('avg_net_r',0):.3f}R");shown+=1
+    if not shown:lines.append("• пока недостаточно оценённых исходов")
+    lines += ["","DeFi сейчас shadow-only. Protocol security events блокируют новые тренировочные кандидаты."]
+    return "\n".join(lines)
+
 def telegram_text(hours=168):
     s=summary(hours)
     gold=(s.get("groups") or {}).get("GOLD",{})
