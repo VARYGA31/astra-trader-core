@@ -278,7 +278,7 @@ def plan(packages,state,force=False):
 
 def telegram_text():
     u=usage_today()
-    return "\n".join([
+    lines=[
         "💰 <b>ASTRA AUTO COST</b>",
         "",
         f"UTC date: <b>{u['date_utc']}</b>",
@@ -293,9 +293,21 @@ def telegram_text():
             "Daily estimated cap: <b>OFF</b>"
         ),
         "",
-        f"Baseline Astra interval: <b>{config.ADAPTIVE_BASE_MODEL_INTERVAL_MINUTES} min</b>",
-        f"Early-trigger min gap: <b>{config.ADAPTIVE_TRIGGER_MIN_GAP_MINUTES} min</b>",
-        f"Protected reserve: <b>{config.ADAPTIVE_BASELINE_RESERVE_CALLS} calls / USD {config.ADAPTIVE_BASELINE_RESERVE_USD:.2f}</b>",
-        "Резерв не тратится обычным baseline и остаётся для сильных сигналов/верифицированных событий.",
-        "Локальный 5m-скан между вызовами модели не расходует OpenAI API.",
-    ])
+    ]
+    if config.ADAPTIVE_TRAINER_V2_ENABLED:
+        lines += [
+            "Mode: <b>TRAINER v2 event-driven</b>",
+            f"Model min gap: <b>{config.ADAPTIVE_TRAINER_MODEL_MIN_GAP_MINUTES} min</b>",
+            f"Candidate threshold: <b>{config.ADAPTIVE_TRAINER_MIN_MODEL_QUALITY:.0f}/100</b>",
+            "Нет фоновых baseline-вызовов Astra.",
+            "Каждая 5m свеча тренируется/оценивается локально без OpenAI API.",
+            "Astra вызывается только для готового кандидата.",
+        ]
+    else:
+        lines += [
+            f"Baseline Astra interval: <b>{config.ADAPTIVE_BASE_MODEL_INTERVAL_MINUTES} min</b>",
+            f"Early-trigger min gap: <b>{config.ADAPTIVE_TRIGGER_MIN_GAP_MINUTES} min</b>",
+            f"Protected reserve: <b>{config.ADAPTIVE_BASELINE_RESERVE_CALLS} calls / USD {config.ADAPTIVE_BASELINE_RESERVE_USD:.2f}</b>",
+            "Локальный 5m-скан между вызовами модели не расходует OpenAI API.",
+        ]
+    return "\n".join(lines)

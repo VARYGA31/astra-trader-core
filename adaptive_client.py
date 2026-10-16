@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Multi-asset strategist for ASTRA ADAPTIVE v1.
+"""Multi-asset strategist for ASTRA ADAPTIVE Trainer v2.
 
 One model call ranks the allowed crypto assets together. Python remains the
 independent safety/risk/execution authority.
@@ -13,11 +13,13 @@ from openai import OpenAI
 import config
 import adaptive_memory
 
-INSTRUCTIONS = """You are ASTRA ADAPTIVE v1.1, a multi-asset trading strategist.
+INSTRUCTIONS = """You are ASTRA ADAPTIVE Trainer v2, a multi-asset trading strategist.
 
-Analyze BTC, ETH and GRAM together and choose at most ONE best opportunity.
-You may choose NORMAL, SCALP, or WAIT. NORMAL means a multi-hour trade. SCALP
-means roughly 5-60 minutes. You are not forced to trade.
+Analyze BTC, ETH and GRAM together, but in Trainer v2 you are primarily a
+FINAL SELECTOR of pre-built candidate plans. The trainer already generated
+risk-aligned entry/stop/targets from fresh OKX data and attached empirical
+shadow-learning statistics. Choose at most ONE candidate or WAIT.
+NORMAL means a multi-hour trade. SCALP means roughly 5-60 minutes.
 
 You receive raw/derived market evidence, news, guards and selected similar
 historical outcomes from ASTRA's own external memory. Treat historical outcomes
@@ -29,8 +31,11 @@ IMPORTANT:
 - Do not copy social sentiment or outside traders blindly.
 - Confidence is analytical confidence 0-100, not win probability.
 - Use OKX perpetual last_price as entry reference when available.
-- Prefer a trade when evidence is coherent and reward/risk is realistic; do
-  not demand perfect alignment across every indicator.
+- Candidate plans have already passed a zero-token local opportunity ranking.
+  Do not require perfect alignment across every indicator and do not reject a
+  candidate merely because one indicator is neutral.
+- Approve a candidate when its evidence is coherent, its learned evidence is
+  not clearly negative, and there is no concrete market/news invalidator.
 - The payload contains deterministic execution_requirements. Never propose a
   LONG/SHORT that obviously fails those minimum confidence, quality, stop or
   reward/risk requirements. If no candidate satisfies them, return WAIT.
@@ -53,6 +58,7 @@ Return exactly one JSON object with:
     }
   ],
   "best_opportunity":{
+    "candidate_id":"string|null",
     "asset":"BTC|ETH|GRAM|null",
     "action":"LONG|SHORT|WAIT",
     "strategy":"NORMAL|SCALP|WAIT",
@@ -72,8 +78,11 @@ Return exactly one JSON object with:
 
 For LONG require stop < entry < TP1 < TP2.
 For SHORT require stop > entry > TP1 > TP2.
-For WAIT all price levels must be null.
-For SCALP use FAST unless the setup is exceptionally clean and strong enough
+For WAIT candidate_id and all price levels must be null.
+When approving a Trainer v2 candidate, copy its candidate_id, asset, action,
+strategy, scalp_tier, entry, stop_loss, take_profit_1 and take_profit_2 exactly.
+Do not invent alternative levels. For SCALP use the tier supplied by the
+candidate. 
 to justify PRIME. Python will independently enforce confidence, quality, stop,
 R:R, spread, slippage, exposure and drawdown constraints. Your proposal should
 already satisfy the supplied deterministic execution_requirements so model and
@@ -243,6 +252,7 @@ def normalize(d, packages):
         tier="FAST"
 
     out_best={
+        "candidate_id":best.get("candidate_id"),
         "asset":asset or None,
         "action":action,
         "strategy":strategy if action!="WAIT" else "WAIT",
@@ -259,13 +269,14 @@ def normalize(d, packages):
         "reason":str(best.get("reason") or "")[:1200],
     }
     if action=="WAIT":
+        out_best["candidate_id"]=None
         for k in ("entry","stop_loss","take_profit_1","take_profit_2","time_horizon_minutes"):
             out_best[k]=None
 
     return {
         "timestamp_utc":datetime.now(timezone.utc).isoformat(),
         "cycle_id":datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ"),
-        "policy_version":"adaptive_v1_1",
+        "policy_version":"adaptive_trainer_v2",
         "market_summary":str(d.get("market_summary") or "")[:1200],
         "assets":assets,
         "best_opportunity":out_best,
@@ -309,14 +320,18 @@ def _execution_requirements():
         },
     }
 
-def decide_market(packages):
+def decide_market(packages, trainer_candidates=None, trainer_summary=None):
     compact={a:_compact_package(p) for a,p in packages.items()}
     memory=adaptive_memory.similar_cases(packages,config.ADAPTIVE_MEMORY_EXAMPLES)
+    trainer_candidates=list(trainer_candidates or [])
     payload={
         "execution_mode":config.EXECUTION_MODE,
         "allowed_assets":list(packages),
         "safety_note":"Python independently validates every actual order.",
         "execution_requirements":_execution_requirements(),
+        "trainer_mode":bool(trainer_candidates),
+        "trainer_candidates":trainer_candidates,
+        "trainer_learning_summary":trainer_summary,
         "markets":compact,
         "similar_historical_outcomes":memory,
     }
@@ -334,4 +349,49 @@ def decide_market(packages):
         kwargs["reasoning"]={"effort":config.OPENAI_REASONING_EFFORT}
     r=OpenAI().responses.create(**kwargs)
     _log_usage(r)
-    return normalize(_extract(r.output_text),packages)
+    out=normalize(_extract(r.output_text),packages)
+
+    # In Trainer v2 the model selects a pre-built plan; it does not invent
+    # execution levels. Resolve the selected candidate and overwrite all plan
+    # fields with the deterministic trainer values.
+    if trainer_candidates:
+        best=out.get("best_opportunity") or {}
+        if str(best.get("action") or "WAIT").upper() in {"LONG","SHORT"}:
+            cid=str(best.get("candidate_id") or "")
+            chosen=next((x for x in trainer_candidates if str(x.get("candidate_id"))==cid),None)
+            if chosen is None:
+                matches=[
+                    x for x in trainer_candidates
+                    if str(x.get("asset"))==str(best.get("asset"))
+                    and str(x.get("direction"))==str(best.get("action"))
+                    and str(x.get("strategy"))==str(best.get("strategy"))
+                ]
+                chosen=matches[0] if len(matches)==1 else None
+            if chosen is None:
+                out["best_opportunity"]={
+                    "candidate_id":None,"asset":None,"action":"WAIT","strategy":"WAIT",
+                    "scalp_tier":None,"setup_quality":0.0,
+                    "confidence":float(best.get("confidence") or 0),
+                    "entry":None,"stop_loss":None,"take_profit_1":None,"take_profit_2":None,
+                    "time_horizon_minutes":None,"setup_type":"TRAINER_NO_VALID_CANDIDATE",
+                    "volatility_regime":"NORMAL",
+                    "reason":"Model selection did not map to a supplied Trainer v2 candidate.",
+                }
+            else:
+                best.update({
+                    "candidate_id":chosen.get("candidate_id"),
+                    "asset":chosen.get("asset"),
+                    "action":chosen.get("direction"),
+                    "strategy":chosen.get("strategy"),
+                    "scalp_tier":chosen.get("scalp_tier"),
+                    "setup_quality":chosen.get("quality"),
+                    "entry":chosen.get("entry"),
+                    "stop_loss":chosen.get("stop_loss"),
+                    "take_profit_1":chosen.get("take_profit_1"),
+                    "take_profit_2":chosen.get("take_profit_2"),
+                    "time_horizon_minutes":chosen.get("time_horizon_minutes"),
+                    "setup_type":"TRAINER_V2",
+                    "trainer_learning":chosen.get("learning"),
+                })
+                out["best_opportunity"]=best
+    return out

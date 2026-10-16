@@ -8,7 +8,7 @@ PAUSED is always allowed and stops only new entries.
 import json,time
 from pathlib import Path
 import requests
-import config,strategy_mode,telegram_notifier,demo_ledger,scalp_stats,adaptive_memory,adaptive_cost,adaptive_stats
+import config,strategy_mode,telegram_notifier,demo_ledger,scalp_stats,adaptive_memory,adaptive_cost,adaptive_stats,adaptive_trainer
 from okx_demo_adapter import OKXDemoAdapter
 
 API="https://api.telegram.org"
@@ -21,7 +21,7 @@ def keyboard():
             [{"text":"🟦 NORMAL"},{"text":"⚡ SCALP"},{"text":"🧠 AUTO"}],
             [{"text":"⏸ PAUSE"},{"text":"📊 STATUS"}],
             [{"text":"📈 SCALP STATS"},{"text":"🧠 BRAIN"},{"text":"🎓 LEARNING"}],
-            [{"text":"💰 COST"},{"text":"📊 AUTO STATS"}],
+            [{"text":"💰 COST"},{"text":"📊 AUTO STATS"},{"text":"🧪 TRAINER"}],
         ],
         "resize_keyboard":True,
         "is_persistent":True,
@@ -57,7 +57,7 @@ def _summary():
         f"Demo equity: <b>${float(ledger.get('equity') or 0):.2f}</b>\n\n"
         f"🟦 NORMAL: 4H → 1H → 15M\n"
         f"⚡ SCALP: 1H → 15M → 5M (BTC/ETH/GRAM)\n"
-        f"🧠 AUTO: ASTRA сама выбирает NORMAL / SCALP / WAIT по BTC/ETH/GRAM\n"
+        f"🧠 AUTO: Trainer v2 тренируется на 5m без токенов; Astra проверяет только готовые кандидаты\n"
         f"⏸ PAUSE: новые входы выключены, защита открытой позиции продолжает работать."
     )
 
@@ -138,10 +138,12 @@ def handle_update(update):
         _send(adaptive_cost.telegram_text()); return {"status":"OK","action":"COST"}
     if text.lower() in {"/auto_stats","/autostats","/auto_funnel"} or text.upper()=="📊 AUTO STATS":
         _send(adaptive_stats.telegram_text(24)); return {"status":"OK","action":"AUTO_STATS"}
+    if text.lower() in {"/trainer","/train","/trainer_stats"} or text.upper()=="🧪 TRAINER":
+        _send(adaptive_trainer.telegram_text(168)); return {"status":"OK","action":"TRAINER"}
     target=parse_mode_command(text)
     if target:
         _switch(target); return {"status":"OK","action":"SWITCH","target":target}
-    _send("Команды: /normal, /scalp, /auto, /pause, /status, /mode, /scalp_stats, /auto_stats, /brain, /learning, /cost")
+    _send("Команды: /normal, /scalp, /auto, /pause, /status, /mode, /scalp_stats, /auto_stats, /trainer, /brain, /learning, /cost")
     return {"status":"OK","action":"HELP"}
 
 def _load_offset():
