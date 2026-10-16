@@ -101,6 +101,8 @@ def _decision_from_best(best, package):
         "scalp_tier":tier if strategy=="SCALP" else None,
         "decision_policy_version":"adaptive_trainer_v2",
         "time_horizon_minutes":best.get("time_horizon_minutes"),
+        "trainer_candidate_id":best.get("candidate_id"),
+        "trainer_learning":best.get("trainer_learning"),
     }
 
 def run_once(force=False):
@@ -235,13 +237,13 @@ def run_once(force=False):
             "action":"WAIT",
             "reason":best.get("reason") or result.get("market_summary") or "No adaptive opportunity",
             "strategy_mode":"AUTO",
-            "decision_policy_version":"adaptive_v1",
+            "decision_policy_version":"adaptive_trainer_v2"
         }
 
     learning=adaptive_memory.evaluate_due()
     return {
         "status":"OK",
-        "reason":"ADAPTIVE_CYCLE",
+        "reason":"ADAPTIVE_TRAINER_CYCLE" if config.ADAPTIVE_TRAINER_V2_ENABLED else "ADAPTIVE_CYCLE",
         "result":result,
         "decision":decision,
         "execution":execution,
