@@ -322,6 +322,7 @@ GOLD_TRAINER_HORIZON_MINUTES = int(os.getenv("GOLD_TRAINER_HORIZON_MINUTES", "24
 # DeFi laboratory. Runtime checks OKX swap state/spread and trains only the
 # strongest liquid markets from this watchlist. No DeFi execution is enabled.
 DEFI_TRAINER_ENABLED = os.getenv("DEFI_TRAINER_ENABLED", "true").lower() == "true"
+DEFI_LAB_SCAN_MINUTES = int(os.getenv("DEFI_LAB_SCAN_MINUTES", "5"))
 DEFI_LAB_WATCHLIST = tuple(
     x.strip().upper() for x in os.getenv(
         "DEFI_LAB_WATCHLIST",
@@ -337,5 +338,6 @@ DEFI_LAB_SCALP_HORIZON_MINUTES = int(os.getenv("DEFI_LAB_SCALP_HORIZON_MINUTES",
 DEFI_LAB_NORMAL_HORIZON_MINUTES = int(os.getenv("DEFI_LAB_NORMAL_HORIZON_MINUTES", "240"))
 DEFI_SECURITY_HALT_HOURS = int(os.getenv("DEFI_SECURITY_HALT_HOURS", "6"))
 
+MULTI_MARKET_TRAINER_TICK_SECONDS = int(os.getenv("MULTI_MARKET_TRAINER_TICK_SECONDS", "60"))
 MULTI_MARKET_TRAINER_LOG_MAX_MB = float(os.getenv("MULTI_MARKET_TRAINER_LOG_MAX_MB", "40"))
 MULTI_MARKET_TRAINER_OUTCOME_BATCH = int(os.getenv("MULTI_MARKET_TRAINER_OUTCOME_BATCH", "128"))
