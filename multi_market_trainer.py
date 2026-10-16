@@ -495,7 +495,7 @@ def summary(hours=168):
         "groups":groups,
         "assets":assets,
         "labels":{k:dict(v) for k,v in labels.items()},
-        "defi_universe":state.get("last_universe") or defi_universe.summary(),
+        "defi_universe":state.get("last_universe") or defi_universe.cached_summary(),
         "runtime":{
             "status":STATE.get("status"),
             "last_error":STATE.get("last_error"),
