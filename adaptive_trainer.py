@@ -267,6 +267,11 @@ def build_candidates(packages):
                 "components":parts,
                 "tags":_tags(p,direction,strategy),
                 "spread_pct":_spread_pct(p),
+                "time_horizon_minutes":(
+                    int(config.ADAPTIVE_TRAINER_SCALP_HORIZON_MINUTES)
+                    if strategy=="SCALP"
+                    else int(config.ADAPTIVE_TRAINER_NORMAL_HORIZON_MINUTES)
+                ),
                 **lv,
             }
             out.append(candidate)
