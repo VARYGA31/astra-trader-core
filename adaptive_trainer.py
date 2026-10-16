@@ -15,6 +15,7 @@ from pathlib import Path
 
 import config
 import market_snapshot
+import decision_gate, scalp_gate
 from asset_map import ASSETS
 
 DIR=Path(config.STATE_DIR)
@@ -199,6 +200,49 @@ def _score(package,direction,strategy):
         score-=3.0
     return score,parts
 
+def _execution_eligibility(package,direction,strategy):
+    reasons=[]
+    g=(package or {}).get("guards",{})
+    account=(package or {}).get("account_state",{})
+    if g.get("market_stale") or not g.get("market_ok",False):
+        reasons.append("MARKET_DATA_GUARD")
+    if not g.get("news_ok",False):
+        reasons.append("NEWS_DATA_GUARD")
+    if not g.get("critical_news_verified",False):
+        reasons.append("UNVERIFIED_HIGH_IMPACT_NEWS")
+    if bool((g.get("cooldown") or {}).get("active")):
+        reasons.append("COOLDOWN_ACTIVE")
+    if bool((g.get("loss_streak_pause") or {}).get("active")):
+        reasons.append("LOSS_STREAK_PAUSE")
+    if bool(g.get("trading_halted")):
+        reasons.append("TRADING_HALTED")
+    if bool(g.get("asset_already_open")) and bool(config.ONE_POSITION_PER_ASSET):
+        reasons.append("ASSET_ALREADY_OPEN")
+    if int(account.get("open_positions") or 0)>=int(config.MAX_OPEN_POSITIONS):
+        reasons.append("MAX_OPEN_POSITIONS")
+
+    spread=_spread_pct(package)
+    max_spread=float(config.ADAPTIVE_SCALP_MAX_SPREAD_PCT if strategy=="SCALP" else config.ADAPTIVE_NORMAL_MAX_SPREAD_PCT)
+    if spread is None:
+        reasons.append("SPREAD_UNAVAILABLE")
+    elif spread>max_spread:
+        reasons.append("SPREAD_TOO_WIDE")
+
+    try:
+        guard=(scalp_gate.entry_guard(package,direction) if strategy=="SCALP" else decision_gate.entry_guard(package,direction))
+    except Exception as e:
+        guard={"blocked":True,"reason":"ENTRY_GUARD_ERROR","error":str(e)}
+    if guard.get("blocked"):
+        reasons.append(str(guard.get("reason") or "ENTRY_GUARD_BLOCK"))
+
+    return {
+        "eligible":not reasons,
+        "reasons":reasons,
+        "spread_pct":spread,
+        "max_spread_pct":max_spread,
+        "entry_guard":guard,
+    }
+
 def _levels(package,direction,strategy,quality):
     entry=_entry(package)
     if not entry or entry<=0:
@@ -254,6 +298,7 @@ def build_candidates(packages):
             q,score,direction,parts=max(scored,key=lambda x:x[0])
             lv=_levels(p,direction,strategy,q)
             if not lv: continue
+            eligibility=_execution_eligibility(p,direction,strategy)
             candidate={
                 "candidate_id":_candidate_id(asset,strategy,direction,candle),
                 "created_at_utc":now().isoformat(),
@@ -267,6 +312,9 @@ def build_candidates(packages):
                 "components":parts,
                 "tags":_tags(p,direction,strategy),
                 "spread_pct":_spread_pct(p),
+                "execution_eligible":bool(eligibility.get("eligible")),
+                "eligibility_reasons":eligibility.get("reasons") or [],
+                "entry_guard":eligibility.get("entry_guard"),
                 "time_horizon_minutes":(
                     int(config.ADAPTIVE_TRAINER_SCALP_HORIZON_MINUTES)
                     if strategy=="SCALP"
@@ -424,7 +472,8 @@ def process(packages):
     recorded=record_shadow(ranked)
     actionable=[
         c for c in ranked
-        if float(c.get("quality") or 0)>=float(config.ADAPTIVE_TRAINER_MIN_MODEL_QUALITY)
+        if bool(c.get("execution_eligible"))
+        and float(c.get("quality") or 0)>=float(config.ADAPTIVE_TRAINER_MIN_MODEL_QUALITY)
     ]
     return {
         "status":"OK",
