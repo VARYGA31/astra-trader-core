@@ -356,6 +356,15 @@ def snapshot(asset):
             spot=okx_reference_market(cfg["okx_swap"])
         except Exception as e:
             errors.append("okx_xau_reference:"+str(e))
+    elif not cfg.get("binance_spot"):
+        # Lab-only markets deliberately use the tradable OKX swap itself as
+        # the technical/order-flow reference. This avoids adding another data
+        # dependency merely for shadow training.
+        source="okx_swap_reference"
+        try:
+            spot=okx_reference_market(cfg["okx_swap"])
+        except Exception as e:
+            errors.append("okx_reference:"+str(e))
     else:
         source="binance"
         try:
