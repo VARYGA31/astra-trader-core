@@ -5,7 +5,7 @@ from datetime import datetime,timezone
 
 import config,news_listener,position_monitor,trade_cycle,paper_execution,execution_router,decision_gate,observability
 import strategy_mode,scalp_decision_gate,telegram_control,scalp_stats
-import adaptive_engine,adaptive_memory,adaptive_cost,adaptive_stats,adaptive_trainer
+import adaptive_engine,adaptive_memory,adaptive_cost,adaptive_stats,adaptive_trainer,multi_market_trainer
 import position_exit_guard
 from astra_client import decide
 
@@ -37,6 +37,7 @@ R={
     "adaptive_learning_7d":adaptive_memory.summary(168),
     "adaptive_cost_today":adaptive_cost.usage_today(),
     "adaptive_trainer_7d":adaptive_trainer.summary(168),
+    "multi_market_trainer_7d":multi_market_trainer.summary(168) if config.MULTI_MARKET_TRAINER_V3_ENABLED else {"status":"DISABLED"},
 }
 def now():return datetime.now(timezone.utc)
 
@@ -56,6 +57,7 @@ def refresh_observability():
         R["adaptive_cost_today"]=adaptive_cost.usage_today()
         R["adaptive_auto_stats_24h"]=adaptive_stats.summary(24)
         R["adaptive_trainer_7d"]=adaptive_trainer.summary(168)
+        R["multi_market_trainer_7d"]=multi_market_trainer.summary(168) if config.MULTI_MARKET_TRAINER_V3_ENABLED else {"status":"DISABLED"}
     except Exception:
         # Diagnostics must never be able to degrade the trading worker.
         pass
@@ -89,6 +91,8 @@ def main():
     ).start()
     if config.TELEGRAM_CONTROL_ENABLED:
         threading.Thread(target=telegram_control.run_forever,daemon=True).start()
+    if config.MULTI_MARKET_TRAINER_V3_ENABLED:
+        threading.Thread(target=multi_market_trainer.run_forever,daemon=True).start()
 
     paper_execution.init_state(config.INITIAL_EQUITY,False)
     R["status"]="ok"
