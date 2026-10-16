@@ -51,6 +51,7 @@ normal=next(x for x in rows if x["strategy"]=="NORMAL")
 assert scalp["direction"]=="LONG",scalp
 assert normal["direction"]=="LONG",normal
 assert scalp["base_quality"]>=config.ADAPTIVE_TRAINER_MIN_MODEL_QUALITY,scalp
+assert scalp["execution_eligible"] is True,scalp
 assert scalp["stop_loss"]<scalp["entry"]<scalp["take_profit_1"]<scalp["take_profit_2"],scalp
 
 d={
