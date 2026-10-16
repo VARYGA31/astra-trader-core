@@ -127,6 +127,13 @@ def refresh(force=False):
     _save(out)
     return out
 
+def cached_summary():
+    try:
+        x=json.loads(CACHE.read_text(encoding="utf-8"))
+        return x if isinstance(x,dict) else {"status":"NO_DATA","selected_assets":[]}
+    except Exception:
+        return {"status":"NO_DATA","selected_assets":[]}
+
 def summary():
     try:
         return refresh(False)
