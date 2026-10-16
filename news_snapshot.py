@@ -10,6 +10,7 @@ from news_verifier import impact_hint,classify_event,apply_corroboration
 import telegram_markettwits
 
 UA={"User-Agent":"ASTRA-Trader-News/2.0"}
+DEFI_ASSETS={"AAVE","UNI","LDO","PENDLE","CRV","MORPHO"}
 
 def dt_of(e):
     for k in ("published_parsed","updated_parsed","created_parsed"):
@@ -27,6 +28,10 @@ def relevant(asset,text):
             "fed","interest rate","inflation","jobs","payroll","treasury",
             "yield","dollar","war","attack","sanction","geopolit"
         ])
+    if asset in DEFI_ASSETS:
+        # DeFi lab news should be protocol-specific. Generic crypto headlines
+        # are too noisy for a security/governance training signal.
+        return False
     return any(x in t for x in [
         "crypto","cryptocurrency","digital asset","etf",
         "federal reserve","sec ","bitcoin","ethereum"
@@ -93,6 +98,8 @@ def telegram_events(asset,cutoff):
         allowed_types={"MACRO","GEOPOLITICS","REGULATION"}
         if asset=="XAU":
             allowed_types={"MACRO","GEOPOLITICS","COMMODITY_GOLD"}
+        elif asset in DEFI_ASSETS:
+            allowed_types=set()
         if not relevant(asset,text) and e.get("event_type") not in allowed_types:
             continue
         x=dict(e);x["asset"]=asset;out.append(x)

@@ -301,3 +301,43 @@ ADAPTIVE_TRAINER_LEARNING_PRIOR_SAMPLES = float(os.getenv("ADAPTIVE_TRAINER_LEAR
 ADAPTIVE_TRAINER_R_TO_QUALITY_MULT = float(os.getenv("ADAPTIVE_TRAINER_R_TO_QUALITY_MULT", "8"))
 ADAPTIVE_TRAINER_LOG_MAX_MB = float(os.getenv("ADAPTIVE_TRAINER_LOG_MAX_MB", "30"))
 ADAPTIVE_TRAINER_CANDIDATES_TO_MODEL = int(os.getenv("ADAPTIVE_TRAINER_CANDIDATES_TO_MODEL", "3"))
+
+
+# ===== ASTRA MULTI-MARKET TRAINER v3 =====
+# Gold + DeFi run as shadow-only laboratories. They never place orders.
+MULTI_MARKET_TRAINER_V3_ENABLED = os.getenv("MULTI_MARKET_TRAINER_V3_ENABLED", "true").lower() == "true"
+
+# Shadow learning uses estimated round-trip trading friction so the learner
+# optimizes NET expectancy, not just raw price movement.
+TRAINER_TAKER_FEE_PCT_PER_SIDE = float(os.getenv("TRAINER_TAKER_FEE_PCT_PER_SIDE", "0.05"))
+TRAINER_SLIPPAGE_PCT_PER_SIDE = float(os.getenv("TRAINER_SLIPPAGE_PCT_PER_SIDE", "0.02"))
+TRAINER_FUNDING_INTERVAL_MINUTES = int(os.getenv("TRAINER_FUNDING_INTERVAL_MINUTES", "480"))
+
+# Gold laboratory: shadow only, separate from crypto statistics.
+GOLD_TRAINER_ENABLED = os.getenv("GOLD_TRAINER_ENABLED", "true").lower() == "true"
+GOLD_TRAINER_INTERVAL_MINUTES = int(os.getenv("GOLD_TRAINER_INTERVAL_MINUTES", "15"))
+GOLD_TRAINER_SHADOW_MIN_QUALITY = float(os.getenv("GOLD_TRAINER_SHADOW_MIN_QUALITY", "58"))
+GOLD_TRAINER_HORIZON_MINUTES = int(os.getenv("GOLD_TRAINER_HORIZON_MINUTES", "240"))
+
+# DeFi laboratory. Runtime checks OKX swap state/spread and trains only the
+# strongest liquid markets from this watchlist. No DeFi execution is enabled.
+DEFI_TRAINER_ENABLED = os.getenv("DEFI_TRAINER_ENABLED", "true").lower() == "true"
+DEFI_LAB_SCAN_MINUTES = int(os.getenv("DEFI_LAB_SCAN_MINUTES", "5"))
+DEFI_LAB_WATCHLIST = tuple(
+    x.strip().upper() for x in os.getenv(
+        "DEFI_LAB_WATCHLIST",
+        "AAVE,UNI,LDO,PENDLE,CRV,MORPHO"
+    ).split(",") if x.strip()
+)
+DEFI_LAB_TOP_N = int(os.getenv("DEFI_LAB_TOP_N", "3"))
+DEFI_LAB_UNIVERSE_REFRESH_MINUTES = int(os.getenv("DEFI_LAB_UNIVERSE_REFRESH_MINUTES", "360"))
+DEFI_LAB_NEWS_REFRESH_MINUTES = int(os.getenv("DEFI_LAB_NEWS_REFRESH_MINUTES", "30"))
+DEFI_LAB_MAX_SPREAD_PCT = float(os.getenv("DEFI_LAB_MAX_SPREAD_PCT", "0.12"))
+DEFI_LAB_SHADOW_MIN_QUALITY = float(os.getenv("DEFI_LAB_SHADOW_MIN_QUALITY", "56"))
+DEFI_LAB_SCALP_HORIZON_MINUTES = int(os.getenv("DEFI_LAB_SCALP_HORIZON_MINUTES", "60"))
+DEFI_LAB_NORMAL_HORIZON_MINUTES = int(os.getenv("DEFI_LAB_NORMAL_HORIZON_MINUTES", "240"))
+DEFI_SECURITY_HALT_HOURS = int(os.getenv("DEFI_SECURITY_HALT_HOURS", "6"))
+
+MULTI_MARKET_TRAINER_TICK_SECONDS = int(os.getenv("MULTI_MARKET_TRAINER_TICK_SECONDS", "60"))
+MULTI_MARKET_TRAINER_LOG_MAX_MB = float(os.getenv("MULTI_MARKET_TRAINER_LOG_MAX_MB", "40"))
+MULTI_MARKET_TRAINER_OUTCOME_BATCH = int(os.getenv("MULTI_MARKET_TRAINER_OUTCOME_BATCH", "128"))

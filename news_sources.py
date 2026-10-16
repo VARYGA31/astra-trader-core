@@ -4,9 +4,9 @@ SOURCES = [
     {"id":"bea","name":"U.S. Bureau of Economic Analysis","url":"https://apps.bea.gov/rss/rss.xml","tier":0,"kind":"PRIMARY","assets":["XAU"],"category":"MACRO"},
     {"id":"sec","name":"U.S. SEC","url":"https://www.sec.gov/news/pressreleases.rss","tier":0,"kind":"PRIMARY","assets":["BTC","ETH","GRAM"],"category":"REGULATION"},
     {"id":"ethereum_foundation","name":"Ethereum Foundation","url":"https://blog.ethereum.org/feed.xml","tier":0,"kind":"PRIMARY","assets":["ETH"],"category":"PROTOCOL"},
-    {"id":"coinbase","name":"Coinbase Blog","url":"https://www.coinbase.com/blog/rss.xml","tier":1,"kind":"PRIMARY","assets":["BTC","ETH","GRAM"],"category":"EXCHANGE"},
-    {"id":"coindesk","name":"CoinDesk","url":"https://www.coindesk.com/arc/outboundfeeds/rss/","tier":2,"kind":"SECONDARY","assets":["BTC","ETH","GRAM"],"category":"CRYPTO_MEDIA"},
-    {"id":"decrypt","name":"Decrypt","url":"https://decrypt.co/feed","tier":2,"kind":"SECONDARY","assets":["BTC","ETH","GRAM"],"category":"CRYPTO_MEDIA"},
+    {"id":"coinbase","name":"Coinbase Blog","url":"https://www.coinbase.com/blog/rss.xml","tier":1,"kind":"PRIMARY","assets":["BTC","ETH","GRAM","AAVE","UNI","LDO","PENDLE","CRV","MORPHO"],"category":"EXCHANGE"},
+    {"id":"coindesk","name":"CoinDesk","url":"https://www.coindesk.com/arc/outboundfeeds/rss/","tier":2,"kind":"SECONDARY","assets":["BTC","ETH","GRAM","AAVE","UNI","LDO","PENDLE","CRV","MORPHO"],"category":"CRYPTO_MEDIA"},
+    {"id":"decrypt","name":"Decrypt","url":"https://decrypt.co/feed","tier":2,"kind":"SECONDARY","assets":["BTC","ETH","GRAM","AAVE","UNI","LDO","PENDLE","CRV","MORPHO"],"category":"CRYPTO_MEDIA"},
 ]
 
 TRUSTED_DISCOVERY_PUBLISHERS = {
@@ -26,6 +26,12 @@ DISCOVERY_QUERIES = {
         "gold Reuters geopolitics",
         "XAU gold Bloomberg"
     ],
+    "AAVE":["Aave protocol exploit hack governance","AAVE DeFi Reuters","Aave token unlock"],
+    "UNI":["Uniswap exploit hack governance","UNI DeFi Reuters","Uniswap token unlock"],
+    "LDO":["Lido protocol exploit hack governance","LDO DeFi Reuters","Lido staking security"],
+    "PENDLE":["Pendle Finance exploit hack governance","PENDLE DeFi","Pendle token unlock"],
+    "CRV":["Curve Finance exploit hack governance","CRV DeFi Reuters","Curve token unlock"],
+    "MORPHO":["Morpho protocol exploit hack governance","MORPHO DeFi","Morpho token unlock"],
 }
 
 ALIASES = {
@@ -38,4 +44,10 @@ ALIASES = {
         "nonfarm payroll","payrolls","employment","unemployment",
         "treasury yield","treasury yields","interest rate","real yields"
     ],
+    "AAVE":["aave","aave protocol"],
+    "UNI":["uniswap","uni token"],
+    "LDO":["lido","lido dao","ldo token"],
+    "PENDLE":["pendle","pendle finance"],
+    "CRV":["curve finance","crv token","curve dao"],
+    "MORPHO":["morpho protocol","morpho token"],
 }
