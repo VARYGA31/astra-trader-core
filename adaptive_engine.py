@@ -16,6 +16,7 @@ import trade_cycle
 import adaptive_client
 import adaptive_memory
 import adaptive_cost
+import adaptive_trainer
 
 STATE=Path(config.STATE_DIR)/"adaptive_cycle_state.json"
 
@@ -98,7 +99,7 @@ def _decision_from_best(best, package):
         "adaptive_setup_quality":quality,
         "mtf_quality":quality,
         "scalp_tier":tier if strategy=="SCALP" else None,
-        "decision_policy_version":"adaptive_v1_1",
+        "decision_policy_version":"adaptive_trainer_v2",
         "time_horizon_minutes":best.get("time_horizon_minutes"),
     }
 
@@ -116,23 +117,107 @@ def run_once(force=False):
             "cost":adaptive_cost.budget_status(),
         }
 
-    if config.ADAPTIVE_COST_SMART_ENABLED:
-        plan=adaptive_cost.plan(packages,_load_state(),force=force)
-        if not plan.get("call_model"):
+    trainer=None
+    if config.ADAPTIVE_TRAINER_V2_ENABLED:
+        trainer=adaptive_trainer.process(packages)
+        ranked=list(trainer.get("ranked") or [])
+        threshold=float(
+            config.ADAPTIVE_TRAINER_EVENT_MIN_MODEL_QUALITY
+            if force else config.ADAPTIVE_TRAINER_MIN_MODEL_QUALITY
+        )
+
+        def min_quality(c):
+            strategy=str(c.get("strategy") or "").upper()
+            if strategy=="NORMAL":
+                return max(threshold,float(config.MTF_MIN_QUALITY))
+            tier=str(c.get("scalp_tier") or "FAST").upper()
+            if tier=="PRIME":
+                return max(threshold,float(config.SCALP_MIN_QUALITY))
+            return max(threshold,float(config.SCALP_FAST_MIN_QUALITY))
+
+        candidates=[x for x in ranked if float(x.get("quality") or 0)>=min_quality(x)]
+        plan={
+            "call_model":False,
+            "reason":"TRAINER_NO_ACTIONABLE_CANDIDATE",
+            "trainer_best":trainer.get("best"),
+            "trainer_actionable":len(candidates),
+        }
+
+        gap_seconds=adaptive_cost.seconds_since(_load_state().get("last_model_call_at_utc"))
+        minimum_gap=float(config.ADAPTIVE_TRAINER_MODEL_MIN_GAP_MINUTES)*60.0
+        if candidates and gap_seconds<minimum_gap:
+            plan["reason"]="TRAINER_MODEL_COOLDOWN"
+            plan["seconds_until_model_allowed"]=max(0,int(minimum_gap-gap_seconds))
             _mark(packages,None,model_called=False,plan=plan)
             learning=adaptive_memory.evaluate_due()
             return {
                 "status":"SKIPPED",
-                "reason":plan.get("reason") or "COST_SMART_WAIT",
+                "reason":plan["reason"],
                 "packages":packages,
                 "hard_guards":_hard_guard_summary(packages),
                 "cost_plan":plan,
+                "trainer":trainer,
                 "learning":learning,
             }
-    else:
-        plan={"call_model":True,"reason":"COST_SMART_DISABLED"}
 
-    result=adaptive_client.decide_market(packages)
+        budget=adaptive_cost.budget_status()
+        if candidates and not budget.get("allowed"):
+            plan.update({"reason":budget.get("reason"),"budget":budget})
+            _mark(packages,None,model_called=False,plan=plan)
+            learning=adaptive_memory.evaluate_due()
+            return {
+                "status":"SKIPPED",
+                "reason":plan["reason"],
+                "packages":packages,
+                "hard_guards":_hard_guard_summary(packages),
+                "cost_plan":plan,
+                "trainer":trainer,
+                "learning":learning,
+            }
+
+        if not candidates:
+            _mark(packages,None,model_called=False,plan=plan)
+            learning=adaptive_memory.evaluate_due()
+            return {
+                "status":"SKIPPED",
+                "reason":plan["reason"],
+                "packages":packages,
+                "hard_guards":_hard_guard_summary(packages),
+                "cost_plan":plan,
+                "trainer":trainer,
+                "learning":learning,
+            }
+
+        selected=candidates[:max(1,int(config.ADAPTIVE_TRAINER_CANDIDATES_TO_MODEL))]
+        plan.update({
+            "call_model":True,
+            "reason":"TRAINER_ACTIONABLE_CANDIDATE",
+            "budget":budget,
+            "candidate_ids":[x.get("candidate_id") for x in selected],
+        })
+        result=adaptive_client.decide_market(
+            packages,
+            trainer_candidates=selected,
+            trainer_summary=trainer.get("summary"),
+        )
+    else:
+        if config.ADAPTIVE_COST_SMART_ENABLED:
+            plan=adaptive_cost.plan(packages,_load_state(),force=force)
+            if not plan.get("call_model"):
+                _mark(packages,None,model_called=False,plan=plan)
+                learning=adaptive_memory.evaluate_due()
+                return {
+                    "status":"SKIPPED",
+                    "reason":plan.get("reason") or "COST_SMART_WAIT",
+                    "packages":packages,
+                    "hard_guards":_hard_guard_summary(packages),
+                    "cost_plan":plan,
+                    "learning":learning,
+                }
+        else:
+            plan={"call_model":True,"reason":"COST_SMART_DISABLED"}
+
+        result=adaptive_client.decide_market(packages)
     adaptive_memory.record_cycle(result,packages)
     _mark(packages,result,model_called=True,plan=plan)
 
@@ -165,4 +250,5 @@ def run_once(force=False):
         "hard_guards":_hard_guard_summary(packages),
         "cost_plan":plan,
         "cost":adaptive_cost.usage_today(),
+        "trainer":trainer,
     }
