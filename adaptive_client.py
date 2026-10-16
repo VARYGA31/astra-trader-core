@@ -276,7 +276,7 @@ def normalize(d, packages):
     return {
         "timestamp_utc":datetime.now(timezone.utc).isoformat(),
         "cycle_id":datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ"),
-        "policy_version":"adaptive_v1_1",
+        "policy_version":"adaptive_trainer_v2",
         "market_summary":str(d.get("market_summary") or "")[:1200],
         "assets":assets,
         "best_opportunity":out_best,
@@ -389,6 +389,7 @@ def decide_market(packages, trainer_candidates=None, trainer_summary=None):
                     "stop_loss":chosen.get("stop_loss"),
                     "take_profit_1":chosen.get("take_profit_1"),
                     "take_profit_2":chosen.get("take_profit_2"),
+                    "time_horizon_minutes":chosen.get("time_horizon_minutes"),
                     "setup_type":"TRAINER_V2",
                     "trainer_learning":chosen.get("learning"),
                 })
