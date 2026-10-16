@@ -107,6 +107,60 @@ def _entry(package):
     m=(package or {}).get("decision_context",{}).get("market",{})
     return _num((m.get("perp_okx") or {}).get("last_price")) or _num((m.get("spot") or {}).get("price"))
 
+def _market_regime(package):
+    """Coarse regime label used to keep learning context-specific."""
+    f5=_frame(package,"5m"); f15=_frame(package,"15m"); f1=_frame(package,"1h"); f4=_frame(package,"4h")
+    t4=_regime(f4,"trend"); t1=_regime(f1,"trend")
+    s4=_regime(f4,"structure"); s1=_regime(f1,"structure")
+    if t4=="BULLISH" and t1=="BULLISH":
+        base="TREND_UP"
+    elif t4=="BEARISH" and t1=="BEARISH":
+        base="TREND_DOWN"
+    elif t1=="BULLISH" and t4!="BEARISH":
+        base="TRANSITION_UP"
+    elif t1=="BEARISH" and t4!="BULLISH":
+        base="TRANSITION_DOWN"
+    elif s4=="RANGE" or s1=="RANGE":
+        base="RANGE"
+    else:
+        base="MIXED"
+
+    atr5=_num((f5.get("indicators") or {}).get("atr_pct"))
+    atr15=_num((f15.get("indicators") or {}).get("atr_pct"))
+    a=max(x for x in (atr5,atr15) if x is not None) if any(x is not None for x in (atr5,atr15)) else None
+    if a is None:
+        vol="VOL_UNKNOWN"
+    elif a>=0.80:
+        vol="VOL_HIGH"
+    elif a>=0.20:
+        vol="VOL_NORMAL"
+    else:
+        vol="VOL_LOW"
+    return base+"|"+vol
+
+def _estimated_cost(candidate):
+    """Conservative estimated round-trip friction expressed in % and R."""
+    fee_pct=2.0*float(config.TRAINER_TAKER_FEE_PCT_PER_SIDE)
+    slippage_pct=2.0*float(config.TRAINER_SLIPPAGE_PCT_PER_SIDE)
+    spread_pct=max(0.0,float(candidate.get("spread_pct") or 0.0))
+    funding_rate=float(candidate.get("funding_rate") or 0.0)
+    horizon=max(0.0,float(candidate.get("time_horizon_minutes") or 0.0))
+    interval=max(1.0,float(config.TRAINER_FUNDING_INTERVAL_MINUTES))
+    funding_pct=funding_rate*100.0*(horizon/interval)
+    # Positive funding costs longs and benefits shorts; negative funding is the reverse.
+    if str(candidate.get("direction") or "").upper()=="SHORT":
+        funding_pct=-funding_pct
+    total_pct=max(0.0,fee_pct+slippage_pct+spread_pct+funding_pct)
+    stop_pct=max(1e-9,float(candidate.get("stop_pct") or 0.0))
+    return {
+        "fee_pct":round(fee_pct,6),
+        "slippage_pct":round(slippage_pct,6),
+        "spread_pct":round(spread_pct,6),
+        "funding_pct":round(funding_pct,6),
+        "total_pct":round(total_pct,6),
+        "cost_r":round(total_pct/stop_pct,6),
+    }
+
 def _tags(package,direction,strategy):
     tags=[str(strategy),str(direction)]
     for tf in ("5m","15m","1h","4h"):
@@ -299,6 +353,8 @@ def build_candidates(packages):
             lv=_levels(p,direction,strategy,q)
             if not lv: continue
             eligibility=_execution_eligibility(p,direction,strategy)
+            market=(p or {}).get("decision_context",{}).get("market",{})
+            perp=market.get("perp_okx") or {}
             candidate={
                 "candidate_id":_candidate_id(asset,strategy,direction,candle),
                 "created_at_utc":now().isoformat(),
@@ -311,7 +367,9 @@ def build_candidates(packages):
                 "quality":round(q,2),
                 "components":parts,
                 "tags":_tags(p,direction,strategy),
+                "market_regime":_market_regime(p),
                 "spread_pct":_spread_pct(p),
+                "funding_rate":_num(perp.get("funding_rate")),
                 "execution_eligible":bool(eligibility.get("eligible")),
                 "eligibility_reasons":eligibility.get("reasons") or [],
                 "entry_guard":eligibility.get("entry_guard"),
@@ -322,6 +380,7 @@ def build_candidates(packages):
                 ),
                 **lv,
             }
+            candidate["estimated_cost"]=_estimated_cost(candidate)
             out.append(candidate)
     return out
 
@@ -387,14 +446,24 @@ def evaluate_due(batch=None):
         start=int(dt.timestamp()*1000); end=int((dt+timedelta(minutes=horizon)).timestamp()*1000)
         bars=[b for b in bars_cache[asset] if start<=int(b.get("open_time_ms",0))<=end]
         if not bars: continue
-        label,r=_path(c,bars)
+        label,gross_r=_path(c,bars)
+        cost=_estimated_cost(c)
+        gross_r=float(gross_r or 0.0)
+        net_r=gross_r-float(cost.get("cost_r") or 0.0)
         row={
             "evaluated_at_utc":now().isoformat(),
             "candidate_id":c.get("candidate_id"),
             "created_at_utc":c.get("created_at_utc"),
             "asset":asset,"strategy":c.get("strategy"),"direction":c.get("direction"),
             "base_quality":c.get("base_quality"),"tags":c.get("tags") or [],
-            "label":label,"r_result":round(float(r or 0),4),"horizon_minutes":horizon,
+            "market_regime":c.get("market_regime"),
+            "label":label,
+            "gross_r":round(gross_r,4),
+            "estimated_cost_r":round(float(cost.get("cost_r") or 0.0),4),
+            "estimated_cost_pct":round(float(cost.get("total_pct") or 0.0),4),
+            "net_r":round(net_r,4),
+            "r_result":round(net_r,4),
+            "horizon_minutes":horizon,
         }
         _append(OUTCOMES,row); done.add(c.get("candidate_id")); added+=1
     return {"status":"OK","evaluated":added}
@@ -410,6 +479,10 @@ def _similar_stats(candidate,outcomes=None):
         if x.get("strategy")!=candidate.get("strategy"): continue
         weight=1.0
         if x.get("direction")==candidate.get("direction"): weight+=1.0
+        if x.get("market_regime") and x.get("market_regime")==candidate.get("market_regime"):
+            weight+=1.5
+        elif x.get("market_regime") and candidate.get("market_regime"):
+            weight*=0.65
         xt=set(x.get("tags") or [])
         union=len(tags|xt); inter=len(tags&xt)
         if union: weight+=2.0*(inter/union)
@@ -499,11 +572,16 @@ def summary(hours=168):
     def finish(d):
         return {k:{"samples":v["n"],"avg_r":round(v["r"]/v["n"],3) if v["n"] else 0.0} for k,v in d.items()}
     total_r=sum(float(x.get("r_result") or 0) for x in outcomes)
+    total_gross=sum(float(x.get("gross_r") if x.get("gross_r") is not None else x.get("r_result") or 0) for x in outcomes)
+    total_cost=sum(float(x.get("estimated_cost_r") or 0) for x in outcomes)
     return {
         "hours":float(hours),
         "shadow_candidates":len(candidates),
         "evaluated":len(outcomes),
         "avg_r":round(total_r/len(outcomes),3) if outcomes else 0.0,
+        "avg_net_r":round(total_r/len(outcomes),3) if outcomes else 0.0,
+        "avg_gross_r":round(total_gross/len(outcomes),3) if outcomes else 0.0,
+        "avg_cost_r":round(total_cost/len(outcomes),3) if outcomes else 0.0,
         "labels":dict(labels),
         "by_asset":finish(by_asset),
         "by_strategy":finish(by_strategy),
@@ -516,7 +594,8 @@ def telegram_text(hours=168):
         f"🧪 <b>ASTRA TRAINER — {int(float(hours))}h</b>","",
         f"Shadow practice: <b>{s.get('shadow_candidates',0)}</b>",
         f"Evaluated: <b>{s.get('evaluated',0)}</b>",
-        f"Average shadow R: <b>{s.get('avg_r',0):.3f}R</b>",
+        f"Average NET shadow R: <b>{s.get('avg_net_r',s.get('avg_r',0)):.3f}R</b>",
+        f"Gross / friction: <b>{s.get('avg_gross_r',0):.3f}R / {s.get('avg_cost_r',0):.3f}R</b>",
         f"TP2: <b>{l.get('TP2_HIT',0)}</b>",
         f"TP1 only: <b>{l.get('TP1_ONLY',0)}</b>",
         f"Stops: <b>{l.get('STOP_HIT',0)}</b>",
@@ -526,7 +605,7 @@ def telegram_text(hours=168):
     ]
     for a,v in sorted((s.get("by_asset") or {}).items()):
         lines.append(f"• {a}: {v.get('samples',0)} samples | {v.get('avg_r',0):.3f}R")
-    lines+=["","Это обучение на теневых сделках без OpenAI API и без ордеров."]
+    lines+=["","NET R учитывает оценку комиссии, spread, slippage и funding.","Это обучение на теневых сделках без OpenAI API и без ордеров."]
     return "\n".join(lines)
 
 if __name__=="__main__":
