@@ -11,7 +11,7 @@ import adaptive_stats
 
 req=adaptive_client._execution_requirements()
 assert req["NORMAL"]["min_confidence"]==float(config.MIN_TRADE_CONFIDENCE),req
-assert req["NORMAL"]["min_setup_quality"]==float(config.MTF_MIN_QUALITY),req
+assert req["NORMAL"]["min_setup_quality"]==float(max(config.MTF_MIN_QUALITY,config.MIN_TRADE_CONFIDENCE)),req
 assert req["SCALP_FAST"]["min_confidence"]==float(config.SCALP_FAST_MIN_TRADE_CONFIDENCE),req
 assert req["SCALP_FAST"]["min_tp2_r"]==float(config.SCALP_FAST_MIN_TP2_R),req
 assert req["SCALP_PRIME"]["min_confidence"]==float(config.SCALP_MIN_TRADE_CONFIDENCE),req
