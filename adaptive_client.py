@@ -286,7 +286,7 @@ def _execution_requirements():
     return {
         "NORMAL":{
             "min_confidence":float(config.MIN_TRADE_CONFIDENCE),
-            "min_setup_quality":float(config.MTF_MIN_QUALITY),
+            "min_setup_quality":float(max(config.MTF_MIN_QUALITY,config.MIN_TRADE_CONFIDENCE)),
             "min_tp1_r":float(config.MIN_TP1_R),
             "min_tp2_r":float(config.MIN_TP2_R),
             "max_spread_pct":float(config.ADAPTIVE_NORMAL_MAX_SPREAD_PCT),
@@ -304,7 +304,7 @@ def _execution_requirements():
         },
         "SCALP_PRIME":{
             "min_confidence":float(config.SCALP_MIN_TRADE_CONFIDENCE),
-            "min_setup_quality":float(config.SCALP_MIN_QUALITY),
+            "min_setup_quality":float(max(config.SCALP_MIN_QUALITY,config.SCALP_MIN_TRADE_CONFIDENCE)),
             "min_stop_pct":float(config.SCALP_MIN_STOP_PCT),
             "max_stop_pct":float(config.SCALP_MAX_STOP_PCT),
             "min_tp1_r":float(config.SCALP_MIN_TP1_R),
