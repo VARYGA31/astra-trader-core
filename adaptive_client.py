@@ -83,7 +83,7 @@ When approving a Trainer v2 candidate, copy its candidate_id, asset, action,
 strategy, scalp_tier, entry, stop_loss, take_profit_1 and take_profit_2 exactly.
 Do not invent alternative levels. For SCALP use the tier supplied by the
 candidate. 
-to justify PRIME. Python will independently enforce confidence, quality, stop,
+Python will independently enforce confidence, quality, stop,
 R:R, spread, slippage, exposure and drawdown constraints. Your proposal should
 already satisfy the supplied deterministic execution_requirements so model and
 Risk Engine are aligned.
@@ -276,7 +276,7 @@ def normalize(d, packages):
     return {
         "timestamp_utc":datetime.now(timezone.utc).isoformat(),
         "cycle_id":datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ"),
-        "policy_version":"adaptive_trainer_v2",
+        "policy_version":"adaptive_execution_v4",
         "market_summary":str(d.get("market_summary") or "")[:1200],
         "assets":assets,
         "best_opportunity":out_best,
