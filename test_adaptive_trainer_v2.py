@@ -70,11 +70,11 @@ assert r["status"]=="APPROVED",r
 
 positive=[{
     "asset":"BTC","strategy":"SCALP","direction":"LONG",
-    "tags":scalp["tags"],"r_result":1.5
+    "tags":scalp["tags"],"market_regime":scalp.get("market_regime"),"geometry_version":scalp.get("geometry_version"),"r_result":1.5
 } for _ in range(30)]
 negative=[{
     "asset":"BTC","strategy":"SCALP","direction":"LONG",
-    "tags":scalp["tags"],"r_result":-1.0
+    "tags":scalp["tags"],"market_regime":scalp.get("market_regime"),"geometry_version":scalp.get("geometry_version"),"r_result":-1.0
 } for _ in range(30)]
 pos=adaptive_trainer._similar_stats(scalp,positive)
 neg=adaptive_trainer._similar_stats(scalp,negative)
