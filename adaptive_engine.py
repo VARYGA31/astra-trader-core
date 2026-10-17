@@ -137,7 +137,7 @@ def run_once(force=False):
                 return max(threshold,float(config.SCALP_MIN_QUALITY),float(config.SCALP_MIN_TRADE_CONFIDENCE))
             return max(threshold,float(config.SCALP_FAST_MIN_QUALITY))
 
-        candidates=[x for x in ranked if bool(x.get("execution_eligible")) and float(x.get("quality") or 0)>=min_quality(x)]
+        candidates=[x for x in ranked if bool(x.get("execution_eligible")) and bool(x.get("cost_efficient")) and float(x.get("quality") or 0)>=min_quality(x)]
         plan={
             "call_model":False,
             "reason":"TRAINER_NO_ACTIONABLE_CANDIDATE",
