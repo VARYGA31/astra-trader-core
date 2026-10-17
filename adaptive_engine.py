@@ -131,10 +131,10 @@ def run_once(force=False):
         def min_quality(c):
             strategy=str(c.get("strategy") or "").upper()
             if strategy=="NORMAL":
-                return max(threshold,float(config.MTF_MIN_QUALITY))
+                return max(threshold,float(config.MTF_MIN_QUALITY),float(config.MIN_TRADE_CONFIDENCE))
             tier=str(c.get("scalp_tier") or "FAST").upper()
             if tier=="PRIME":
-                return max(threshold,float(config.SCALP_MIN_QUALITY))
+                return max(threshold,float(config.SCALP_MIN_QUALITY),float(config.SCALP_MIN_TRADE_CONFIDENCE))
             return max(threshold,float(config.SCALP_FAST_MIN_QUALITY))
 
         candidates=[x for x in ranked if bool(x.get("execution_eligible")) and float(x.get("quality") or 0)>=min_quality(x)]
