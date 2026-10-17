@@ -289,7 +289,7 @@ def _build_candidate(package,group,strategy):
         "time_horizon_minutes":horizon,
         **lv,
     }
-    c["estimated_cost"]=adaptive_trainer._estimated_cost(c)
+    c=adaptive_trainer._apply_cost_aware_geometry(c)
     return c
 
 def _similar_stats(candidate,outcomes):
@@ -299,6 +299,7 @@ def _similar_stats(candidate,outcomes):
         if x.get("group")!=candidate.get("group"):continue
         if x.get("asset")!=candidate.get("asset"):continue
         if x.get("strategy")!=candidate.get("strategy"):continue
+        if candidate.get("geometry_version") and x.get("geometry_version")!=candidate.get("geometry_version"):continue
         r=_num(x.get("net_r") if x.get("net_r") is not None else x.get("r_result"))
         if r is None:continue
         weight=1.0
@@ -321,7 +322,7 @@ def _record(candidates):
     existing={x.get("candidate_id") for x in _read(CANDIDATES)[-3000:]}
     n=0
     for c in candidates:
-        if not c or not c.get("shadow_eligible"):continue
+        if not c or not c.get("shadow_eligible") or not c.get("cost_efficient"):continue
         threshold=float(config.GOLD_TRAINER_SHADOW_MIN_QUALITY if c.get("group")=="GOLD" else config.DEFI_LAB_SHADOW_MIN_QUALITY)
         if float(c.get("base_quality") or 0)<threshold:continue
         if c.get("candidate_id") in existing:continue
@@ -370,6 +371,7 @@ def evaluate_due(batch=None):
             "strategy":c.get("strategy"),
             "direction":c.get("direction"),
             "market_regime":c.get("market_regime"),
+            "geometry_version":c.get("geometry_version"),
             "tags":c.get("tags") or [],
             "label":label,
             "gross_r":round(gross,4),
@@ -462,8 +464,10 @@ def run_forever():
 
 def summary(hours=168):
     cutoff=now()-timedelta(hours=float(hours))
-    outcomes=[x for x in _read(OUTCOMES) if (_parse_ts(x.get("evaluated_at_utc")) or datetime.min.replace(tzinfo=timezone.utc))>=cutoff]
-    candidates=[x for x in _read(CANDIDATES) if (_parse_ts(x.get("created_at_utc")) or datetime.min.replace(tzinfo=timezone.utc))>=cutoff]
+    all_outcomes=[x for x in _read(OUTCOMES) if (_parse_ts(x.get("evaluated_at_utc")) or datetime.min.replace(tzinfo=timezone.utc))>=cutoff]
+    all_candidates=[x for x in _read(CANDIDATES) if (_parse_ts(x.get("created_at_utc")) or datetime.min.replace(tzinfo=timezone.utc))>=cutoff]
+    outcomes=[x for x in all_outcomes if x.get("geometry_version")==config.TRAINER_GEOMETRY_VERSION]
+    candidates=[x for x in all_candidates if x.get("geometry_version")==config.TRAINER_GEOMETRY_VERSION]
     by_group=defaultdict(lambda:{"shadow":0,"evaluated":0,"net":0.0,"gross":0.0,"cost":0.0})
     by_asset=defaultdict(lambda:{"n":0,"net":0.0})
     labels=defaultdict(Counter)
@@ -492,6 +496,9 @@ def summary(hours=168):
     state=_state()
     return {
         "hours":float(hours),
+        "geometry_version":config.TRAINER_GEOMETRY_VERSION,
+        "legacy_shadow_candidates":len(all_candidates)-len(candidates),
+        "legacy_evaluated":len(all_outcomes)-len(outcomes),
         "groups":groups,
         "assets":assets,
         "labels":{k:dict(v) for k,v in labels.items()},
@@ -544,7 +551,8 @@ def telegram_text(hours=168):
     defi=(s.get("groups") or {}).get("DEFI",{})
     u=s.get("defi_universe") or {}
     lines=[
-        f"🌐 <b>MULTI-MARKET LAB — {int(float(hours))}h</b>","",
+        f"🌐 <b>MULTI-MARKET LAB v4 — {int(float(hours))}h</b>","",
+        f"Geometry: <b>{s.get('geometry_version')}</b>",
         "🥇 <b>GOLD TRAINER</b>",
         f"Shadow: <b>{gold.get('shadow',0)}</b> | Evaluated: <b>{gold.get('evaluated',0)}</b>",
         f"NET R: <b>{gold.get('avg_net_r',0):.3f}R</b> | Friction: <b>{gold.get('avg_cost_r',0):.3f}R</b>","",
@@ -563,6 +571,7 @@ def telegram_text(hours=168):
     lines += [
         "",
         "Gold и DeFi здесь только обучаются: ордера не открываются.",
+        "v4 считает только новую cost-aware геометрию; старая статистика сохранена отдельно.",
         "NET R учитывает оценку fees + spread + slippage + funding.",
     ]
     return "\n".join(lines)
