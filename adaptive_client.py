@@ -83,7 +83,7 @@ When approving a Trainer v2 candidate, copy its candidate_id, asset, action,
 strategy, scalp_tier, entry, stop_loss, take_profit_1 and take_profit_2 exactly.
 Do not invent alternative levels. For SCALP use the tier supplied by the
 candidate. 
-to justify PRIME. Python will independently enforce confidence, quality, stop,
+Python will independently enforce confidence, quality, stop,
 R:R, spread, slippage, exposure and drawdown constraints. Your proposal should
 already satisfy the supplied deterministic execution_requirements so model and
 Risk Engine are aligned.
@@ -276,7 +276,7 @@ def normalize(d, packages):
     return {
         "timestamp_utc":datetime.now(timezone.utc).isoformat(),
         "cycle_id":datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ"),
-        "policy_version":"adaptive_trainer_v2",
+        "policy_version":"adaptive_execution_v4",
         "market_summary":str(d.get("market_summary") or "")[:1200],
         "assets":assets,
         "best_opportunity":out_best,
@@ -286,7 +286,7 @@ def _execution_requirements():
     return {
         "NORMAL":{
             "min_confidence":float(config.MIN_TRADE_CONFIDENCE),
-            "min_setup_quality":float(config.MTF_MIN_QUALITY),
+            "min_setup_quality":float(max(config.MTF_MIN_QUALITY,config.MIN_TRADE_CONFIDENCE)),
             "min_tp1_r":float(config.MIN_TP1_R),
             "min_tp2_r":float(config.MIN_TP2_R),
             "max_spread_pct":float(config.ADAPTIVE_NORMAL_MAX_SPREAD_PCT),
@@ -304,7 +304,7 @@ def _execution_requirements():
         },
         "SCALP_PRIME":{
             "min_confidence":float(config.SCALP_MIN_TRADE_CONFIDENCE),
-            "min_setup_quality":float(config.SCALP_MIN_QUALITY),
+            "min_setup_quality":float(max(config.SCALP_MIN_QUALITY,config.SCALP_MIN_TRADE_CONFIDENCE)),
             "min_stop_pct":float(config.SCALP_MIN_STOP_PCT),
             "max_stop_pct":float(config.SCALP_MAX_STOP_PCT),
             "min_tp1_r":float(config.SCALP_MIN_TP1_R),

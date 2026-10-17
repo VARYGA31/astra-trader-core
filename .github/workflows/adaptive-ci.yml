@@ -31,6 +31,8 @@ jobs:
         run: python test_adaptive_trainer_v2.py
       - name: Multi-Market Trainer v3 regression
         run: python test_multi_market_trainer_v3.py
+      - name: Execution v4 regression
+        run: python test_auto_execution_v4.py
       - name: Telegram mode pure test
         run: python test_telegram_mode_control.py
       - name: Execution quality regression

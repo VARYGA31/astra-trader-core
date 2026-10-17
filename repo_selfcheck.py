@@ -10,7 +10,7 @@ required=[
 "astra_client.py","worker.py","exchange_adapter.py",
 "telegram_notifier.py","telegram_control.py","okx_demo_adapter.py","okx_position_monitor.py",
 "execution_router.py","demo_ledger.py","exit_news_decider.py","position_exit_guard.py",
-"test_strategy_guards.py","test_portfolio_guard.py","test_mtf_strategy.py","test_xau_support.py","test_observability.py","test_transition_mode.py","test_execution_quality.py","test_final_decision_calibration.py","test_scalp_mode.py","test_scalp_v2.py","test_scalp_stats.py","test_telegram_mode_control.py","test_adaptive_mode.py","test_adaptive_cost.py","test_adaptive_auto_v11.py","test_adaptive_trainer_v2.py","test_multi_market_trainer_v3.py","requirements.txt","railway.toml"
+"test_strategy_guards.py","test_portfolio_guard.py","test_mtf_strategy.py","test_xau_support.py","test_observability.py","test_transition_mode.py","test_execution_quality.py","test_final_decision_calibration.py","test_scalp_mode.py","test_scalp_v2.py","test_scalp_stats.py","test_telegram_mode_control.py","test_adaptive_mode.py","test_adaptive_cost.py","test_adaptive_auto_v11.py","test_adaptive_trainer_v2.py","test_multi_market_trainer_v3.py","test_auto_execution_v4.py","requirements.txt","railway.toml"
 ]
 
 missing=[x for x in required if not Path(x).exists()]

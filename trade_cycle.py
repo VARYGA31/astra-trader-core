@@ -16,6 +16,39 @@ def parse_ts(x):
     except Exception:
         return None
 
+def _rebase_trainer_levels(decision,current_price):
+    """Translate Trainer-generated levels to the live execution reference.
+
+    Trainer levels are ATR/R based, not fixed chart levels. If entry drift is
+    already inside the existing hard drift guard, translating all levels by the
+    same delta preserves stop distance and exact R:R without loosening risk.
+    """
+    d=dict(decision or {})
+    trainer=bool(d.get("trainer_candidate_id")) or str(d.get("setup_type") or "").upper().startswith("TRAINER")
+    if not trainer:
+        return d,{"rebased":False,"reason":"NOT_TRAINER"}
+    try:
+        planned=float(d["entry"]); current=float(current_price)
+        stop=float(d["stop_loss"]); tp1=float(d["take_profit_1"]); tp2=float(d["take_profit_2"])
+    except Exception:
+        return d,{"rebased":False,"reason":"INVALID_LEVELS"}
+    delta=current-planned
+    original={"entry":planned,"stop_loss":stop,"take_profit_1":tp1,"take_profit_2":tp2}
+    d["entry"]=current
+    d["stop_loss"]=stop+delta
+    d["take_profit_1"]=tp1+delta
+    d["take_profit_2"]=tp2+delta
+    return d,{
+        "rebased":True,
+        "reason":"TRAINER_LIVE_REFERENCE",
+        "delta":delta,
+        "original":original,
+        "rebased_levels":{
+            "entry":d["entry"],"stop_loss":d["stop_loss"],
+            "take_profit_1":d["take_profit_1"],"take_profit_2":d["take_profit_2"],
+        },
+    }
+
 def account_state():
     if config.EXECUTION_MODE == "okx_demo":
         ledger = demo_ledger.status()
@@ -220,8 +253,11 @@ def execute(decision):
         }
 
     decision["planned_entry"]=planned
-    decision["entry"]=current
+    decision,rebase_info=_rebase_trainer_levels(decision,current) if adaptive_active else (decision,{"rebased":False,"reason":"NOT_ADAPTIVE"})
+    if not rebase_info.get("rebased"):
+        decision["entry"]=current
     decision["execution_reference_price"]=current
+    decision["trainer_rebase"]=rebase_info
     decision["execution_price_source"]=execution_price_source
     if adaptive_active:
         decision["mtf_quality"]=float(decision.get("adaptive_setup_quality") or decision.get("mtf_quality") or 0)
@@ -277,6 +313,7 @@ def execute(decision):
         "execution_entry_reference":current,
         "execution_price_source":execution_price_source,
         "entry_drift_pct":drift,
+        "trainer_rebase":decision.get("trainer_rebase"),
     }
 
     # Avoid doubling the same macro bet through BTC+ETH in the same direction.

@@ -99,7 +99,7 @@ def _decision_from_best(best, package):
         "adaptive_setup_quality":quality,
         "mtf_quality":quality,
         "scalp_tier":tier if strategy=="SCALP" else None,
-        "decision_policy_version":"adaptive_trainer_v2",
+        "decision_policy_version":"adaptive_execution_v4",
         "time_horizon_minutes":best.get("time_horizon_minutes"),
         "trainer_candidate_id":best.get("candidate_id"),
         "trainer_learning":best.get("trainer_learning"),
@@ -131,13 +131,13 @@ def run_once(force=False):
         def min_quality(c):
             strategy=str(c.get("strategy") or "").upper()
             if strategy=="NORMAL":
-                return max(threshold,float(config.MTF_MIN_QUALITY))
+                return max(threshold,float(config.MTF_MIN_QUALITY),float(config.MIN_TRADE_CONFIDENCE))
             tier=str(c.get("scalp_tier") or "FAST").upper()
             if tier=="PRIME":
-                return max(threshold,float(config.SCALP_MIN_QUALITY))
+                return max(threshold,float(config.SCALP_MIN_QUALITY),float(config.SCALP_MIN_TRADE_CONFIDENCE))
             return max(threshold,float(config.SCALP_FAST_MIN_QUALITY))
 
-        candidates=[x for x in ranked if bool(x.get("execution_eligible")) and float(x.get("quality") or 0)>=min_quality(x)]
+        candidates=[x for x in ranked if bool(x.get("execution_eligible")) and bool(x.get("cost_efficient")) and float(x.get("quality") or 0)>=min_quality(x)]
         plan={
             "call_model":False,
             "reason":"TRAINER_NO_ACTIONABLE_CANDIDATE",
@@ -237,7 +237,7 @@ def run_once(force=False):
             "action":"WAIT",
             "reason":best.get("reason") or result.get("market_summary") or "No adaptive opportunity",
             "strategy_mode":"AUTO",
-            "decision_policy_version":"adaptive_trainer_v2"
+            "decision_policy_version":"adaptive_execution_v4"
         }
 
     learning=adaptive_memory.evaluate_due()

@@ -161,6 +161,56 @@ def _estimated_cost(candidate):
         "cost_r":round(total_pct/stop_pct,6),
     }
 
+def _apply_cost_aware_geometry(candidate):
+    """Widen deterministic geometry until estimated friction is <= configured R.
+
+    Dollar risk is unchanged because Risk Engine sizes notional from stop distance.
+    """
+    x=dict(candidate)
+    x["geometry_version"]=config.TRAINER_GEOMETRY_VERSION
+    cost=_estimated_cost(x)
+    max_cost_r=max(0.05,float(config.TRAINER_EXECUTION_MAX_COST_R))
+    total_pct=float(cost.get("total_pct") or 0.0)
+    current_stop_pct=max(1e-9,float(x.get("stop_pct") or 0.0))
+    required_stop_pct=(total_pct/max_cost_r) if total_pct>0 else current_stop_pct
+    target_stop_pct=max(current_stop_pct,required_stop_pct)
+    max_stop_pct=(
+        float(config.SCALP_MAX_STOP_PCT)
+        if str(x.get("strategy") or "").upper()=="SCALP"
+        else float(config.TRAINER_NORMAL_MAX_STOP_PCT)
+    )
+    if target_stop_pct>max_stop_pct:
+        x["estimated_cost"]=cost
+        x["cost_efficient"]=False
+        x["cost_geometry_reason"]="REQUIRED_STOP_TOO_WIDE"
+        x["required_stop_pct"]=round(target_stop_pct,6)
+        x["max_allowed_stop_pct"]=round(max_stop_pct,6)
+        return x
+
+    entry=float(x["entry"])
+    risk=entry*(target_stop_pct/100.0)
+    direction=str(x.get("direction") or "").upper()
+    rr1=float(x.get("tp1_r") or 0.0)
+    rr2=float(x.get("tp2_r") or 0.0)
+    if direction=="LONG":
+        x["stop_loss"]=entry-risk
+        x["take_profit_1"]=entry+risk*rr1
+        x["take_profit_2"]=entry+risk*rr2
+    else:
+        x["stop_loss"]=entry+risk
+        x["take_profit_1"]=entry-risk*rr1
+        x["take_profit_2"]=entry-risk*rr2
+    x["stop_pct"]=target_stop_pct
+    x["estimated_cost"]=_estimated_cost(x)
+    x["cost_efficient"]=float(x["estimated_cost"].get("cost_r") or 999.0)<=max_cost_r+1e-9
+    x["cost_geometry_reason"]="OK" if x["cost_efficient"] else "COST_R_STILL_TOO_HIGH"
+    x["required_stop_pct"]=round(required_stop_pct,6)
+    x["max_allowed_stop_pct"]=round(max_stop_pct,6)
+    tags=list(x.get("tags") or [])
+    tags.append("COST_AWARE_V4")
+    x["tags"]=sorted(set(tags))
+    return x
+
 def _tags(package,direction,strategy):
     tags=[str(strategy),str(direction)]
     for tf in ("5m","15m","1h","4h"):
@@ -380,7 +430,7 @@ def build_candidates(packages):
                 ),
                 **lv,
             }
-            candidate["estimated_cost"]=_estimated_cost(candidate)
+            candidate=_apply_cost_aware_geometry(candidate)
             out.append(candidate)
     return out
 
@@ -457,6 +507,7 @@ def evaluate_due(batch=None):
             "asset":asset,"strategy":c.get("strategy"),"direction":c.get("direction"),
             "base_quality":c.get("base_quality"),"tags":c.get("tags") or [],
             "market_regime":c.get("market_regime"),
+            "geometry_version":c.get("geometry_version"),
             "label":label,
             "gross_r":round(gross_r,4),
             "estimated_cost_r":round(float(cost.get("cost_r") or 0.0),4),
@@ -477,6 +528,8 @@ def _similar_stats(candidate,outcomes=None):
     for x in rows:
         if x.get("asset")!=candidate.get("asset"): continue
         if x.get("strategy")!=candidate.get("strategy"): continue
+        if candidate.get("geometry_version") and x.get("geometry_version")!=candidate.get("geometry_version"):
+            continue
         weight=1.0
         if x.get("direction")==candidate.get("direction"): weight+=1.0
         if x.get("market_regime") and x.get("market_regime")==candidate.get("market_regime"):
@@ -546,6 +599,7 @@ def process(packages):
     actionable=[
         c for c in ranked
         if bool(c.get("execution_eligible"))
+        and bool(c.get("cost_efficient"))
         and float(c.get("quality") or 0)>=float(config.ADAPTIVE_TRAINER_MIN_MODEL_QUALITY)
     ]
     return {
@@ -560,8 +614,10 @@ def process(packages):
 
 def summary(hours=168):
     cutoff=now()-timedelta(hours=float(hours))
-    outcomes=[x for x in _read(OUTCOMES) if (_parse_ts(x.get("evaluated_at_utc")) or datetime.min.replace(tzinfo=timezone.utc))>=cutoff]
-    candidates=[x for x in _read(CANDIDATES) if (_parse_ts(x.get("created_at_utc")) or datetime.min.replace(tzinfo=timezone.utc))>=cutoff]
+    all_outcomes=[x for x in _read(OUTCOMES) if (_parse_ts(x.get("evaluated_at_utc")) or datetime.min.replace(tzinfo=timezone.utc))>=cutoff]
+    all_candidates=[x for x in _read(CANDIDATES) if (_parse_ts(x.get("created_at_utc")) or datetime.min.replace(tzinfo=timezone.utc))>=cutoff]
+    outcomes=[x for x in all_outcomes if x.get("geometry_version")==config.TRAINER_GEOMETRY_VERSION]
+    candidates=[x for x in all_candidates if x.get("geometry_version")==config.TRAINER_GEOMETRY_VERSION]
     labels=Counter(str(x.get("label") or "UNKNOWN") for x in outcomes)
     by_asset=defaultdict(lambda:{"n":0,"r":0.0})
     by_strategy=defaultdict(lambda:{"n":0,"r":0.0})
@@ -576,6 +632,9 @@ def summary(hours=168):
     total_cost=sum(float(x.get("estimated_cost_r") or 0) for x in outcomes)
     return {
         "hours":float(hours),
+        "geometry_version":config.TRAINER_GEOMETRY_VERSION,
+        "legacy_shadow_candidates":len(all_candidates)-len(candidates),
+        "legacy_evaluated":len(all_outcomes)-len(outcomes),
         "shadow_candidates":len(candidates),
         "evaluated":len(outcomes),
         "avg_r":round(total_r/len(outcomes),3) if outcomes else 0.0,
@@ -591,7 +650,8 @@ def telegram_text(hours=168):
     s=summary(hours)
     l=s.get("labels",{})
     lines=[
-        f"🧪 <b>ASTRA TRAINER — {int(float(hours))}h</b>","",
+        f"🧪 <b>ASTRA TRAINER v4 — {int(float(hours))}h</b>","",
+        f"Geometry: <b>{s.get('geometry_version')}</b>",
         f"Shadow practice: <b>{s.get('shadow_candidates',0)}</b>",
         f"Evaluated: <b>{s.get('evaluated',0)}</b>",
         f"Average NET shadow R: <b>{s.get('avg_net_r',s.get('avg_r',0)):.3f}R</b>",
@@ -605,7 +665,9 @@ def telegram_text(hours=168):
     ]
     for a,v in sorted((s.get("by_asset") or {}).items()):
         lines.append(f"• {a}: {v.get('samples',0)} samples | {v.get('avg_r',0):.3f}R")
-    lines+=["","NET R учитывает оценку комиссии, spread, slippage и funding.","Это обучение на теневых сделках без OpenAI API и без ордеров."]
+    if s.get("legacy_evaluated"):
+        lines+=["",f"Legacy evaluated (до v4): <b>{s.get('legacy_evaluated')}</b> — сохранены, но не обучают новую геометрию."]
+    lines+=["","NET R учитывает оценку комиссии, spread, slippage и funding.","v4 увеличивает stop-distance только когда это нужно для экономики сделки; долларовый риск не увеличивается.","Это обучение на теневых сделках без OpenAI API и без ордеров."]
     return "\n".join(lines)
 
 if __name__=="__main__":

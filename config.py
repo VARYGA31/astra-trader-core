@@ -341,3 +341,12 @@ DEFI_SECURITY_HALT_HOURS = int(os.getenv("DEFI_SECURITY_HALT_HOURS", "6"))
 MULTI_MARKET_TRAINER_TICK_SECONDS = int(os.getenv("MULTI_MARKET_TRAINER_TICK_SECONDS", "60"))
 MULTI_MARKET_TRAINER_LOG_MAX_MB = float(os.getenv("MULTI_MARKET_TRAINER_LOG_MAX_MB", "40"))
 MULTI_MARKET_TRAINER_OUTCOME_BATCH = int(os.getenv("MULTI_MARKET_TRAINER_OUTCOME_BATCH", "128"))
+
+
+# ===== ASTRA EXECUTION v4 =====
+# Trainer candidates should have enough stop distance that estimated round-trip
+# friction does not consume most of the risk unit. This does NOT increase dollar
+# risk; position sizing remains stop-risk based.
+TRAINER_GEOMETRY_VERSION = os.getenv("TRAINER_GEOMETRY_VERSION", "costaware_v4")
+TRAINER_EXECUTION_MAX_COST_R = float(os.getenv("TRAINER_EXECUTION_MAX_COST_R", "0.35"))
+TRAINER_NORMAL_MAX_STOP_PCT = float(os.getenv("TRAINER_NORMAL_MAX_STOP_PCT", "2.50"))

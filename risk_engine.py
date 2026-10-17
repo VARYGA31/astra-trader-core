@@ -116,7 +116,11 @@ def evaluate(d):
         if asset not in set(config.SCALP_ALLOWED_ASSETS):
             return reject("SCALP_ASSET_NOT_ALLOWED")
         min_conf=config.SCALP_FAST_MIN_TRADE_CONFIDENCE if scalp_tier=="FAST" else config.SCALP_MIN_TRADE_CONFIDENCE
-        min_quality=config.SCALP_FAST_MIN_QUALITY if scalp_tier=="FAST" else config.SCALP_MIN_QUALITY
+        min_quality=(
+            config.SCALP_FAST_MIN_QUALITY
+            if scalp_tier=="FAST"
+            else max(config.SCALP_MIN_QUALITY,config.SCALP_MIN_TRADE_CONFIDENCE)
+        )
         if confidence<min_conf:
             return reject("SCALP_CONFIDENCE_TOO_LOW",{"confidence":confidence,"minimum":min_conf,"scalp_tier":scalp_tier})
         if mtf_quality<min_quality:
@@ -138,7 +142,11 @@ def evaluate(d):
             })
     else:
         min_conf=config.XAU_MIN_TRADE_CONFIDENCE if asset=="XAU" else config.MIN_TRADE_CONFIDENCE
-        min_mtf=config.XAU_MTF_MIN_QUALITY if asset=="XAU" else config.MTF_MIN_QUALITY
+        min_mtf=(
+            config.XAU_MTF_MIN_QUALITY
+            if asset=="XAU"
+            else max(config.MTF_MIN_QUALITY,config.MIN_TRADE_CONFIDENCE)
+        )
         if confidence<min_conf:
             return reject("CONFIDENCE_TOO_LOW",{"confidence":confidence,"minimum":min_conf})
         if mtf_quality<min_mtf:
