@@ -100,7 +100,7 @@ def _decision_from_best(best, package):
         "adaptive_setup_quality":quality,
         "mtf_quality":quality,
         "scalp_tier":tier if strategy=="SCALP" else None,
-        "decision_policy_version":"strategy_tournament_v5" if config.STRATEGY_TOURNAMENT_V5_ENABLED else "adaptive_execution_v4",
+        "decision_policy_version":"strategy_tournament_v5_1" if config.STRATEGY_TOURNAMENT_V5_ENABLED else "adaptive_execution_v4",
         "time_horizon_minutes":best.get("time_horizon_minutes"),
         "trainer_candidate_id":best.get("candidate_id"),
         "trainer_learning":best.get("trainer_learning"),
@@ -153,12 +153,12 @@ def run_once(force=False):
         if config.STRATEGY_TOURNAMENT_V5_ENABLED:
             candidates=[
                 x for x in ranked
-                if bool((x.get("champion_gate") or {}).get("champion"))
+                if bool((x.get("champion_gate") or {}).get("eligible"))
                 and bool(x.get("execution_eligible"))
                 and bool(x.get("cost_efficient"))
                 and float(x.get("quality") or 0)>=min_quality(x)
             ]
-            empty_reason="TOURNAMENT_NO_CHAMPION_CANDIDATE"
+            empty_reason="TOURNAMENT_NO_ELIGIBLE_CANDIDATE"
         else:
             candidates=[
                 x for x in ranked
@@ -233,7 +233,7 @@ def run_once(force=False):
         selected=candidates[:max(1,max_model_candidates)]
         plan.update({
             "call_model":True,
-            "reason":"TOURNAMENT_CHAMPION_REVIEW" if config.STRATEGY_TOURNAMENT_V5_ENABLED else "TRAINER_ACTIONABLE_CANDIDATE",
+            "reason":"TOURNAMENT_ELIGIBLE_REVIEW" if config.STRATEGY_TOURNAMENT_V5_ENABLED else "TRAINER_ACTIONABLE_CANDIDATE",
             "budget":budget,
             "candidate_ids":[x.get("candidate_id") for x in selected],
         })
@@ -277,13 +277,13 @@ def run_once(force=False):
             "action":"WAIT",
             "reason":best.get("reason") or result.get("market_summary") or "No adaptive opportunity",
             "strategy_mode":"AUTO",
-            "decision_policy_version":"strategy_tournament_v5" if config.STRATEGY_TOURNAMENT_V5_ENABLED else "adaptive_execution_v4"
+            "decision_policy_version":"strategy_tournament_v5_1" if config.STRATEGY_TOURNAMENT_V5_ENABLED else "adaptive_execution_v4"
         }
 
     learning=adaptive_memory.evaluate_due()
     return {
         "status":"OK",
-        "reason":"STRATEGY_TOURNAMENT_V5_CYCLE" if config.STRATEGY_TOURNAMENT_V5_ENABLED else ("ADAPTIVE_TRAINER_CYCLE" if config.ADAPTIVE_TRAINER_V2_ENABLED else "ADAPTIVE_CYCLE"),
+        "reason":"STRATEGY_TOURNAMENT_V5_1_CYCLE" if config.STRATEGY_TOURNAMENT_V5_ENABLED else ("ADAPTIVE_TRAINER_CYCLE" if config.ADAPTIVE_TRAINER_V2_ENABLED else "ADAPTIVE_CYCLE"),
         "result":result,
         "decision":decision,
         "execution":execution,
