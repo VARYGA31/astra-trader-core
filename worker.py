@@ -5,7 +5,7 @@ from datetime import datetime,timezone
 
 import config,news_listener,position_monitor,trade_cycle,paper_execution,execution_router,decision_gate,observability
 import strategy_mode,scalp_decision_gate,telegram_control,scalp_stats
-import adaptive_engine,adaptive_memory,adaptive_cost,adaptive_stats,adaptive_trainer,multi_market_trainer
+import adaptive_engine,adaptive_memory,adaptive_cost,adaptive_stats,adaptive_trainer,multi_market_trainer,strategy_tournament
 import position_exit_guard
 from astra_client import decide
 
@@ -38,6 +38,7 @@ R={
     "adaptive_cost_today":adaptive_cost.usage_today(),
     "adaptive_trainer_7d":adaptive_trainer.summary(168),
     "multi_market_trainer_7d":multi_market_trainer.summary(168) if config.MULTI_MARKET_TRAINER_V3_ENABLED else {"status":"DISABLED"},
+    "strategy_tournament_7d":strategy_tournament.summary(168) if config.STRATEGY_TOURNAMENT_V5_ENABLED else {"status":"DISABLED"},
 }
 def now():return datetime.now(timezone.utc)
 
@@ -58,6 +59,7 @@ def refresh_observability():
         R["adaptive_auto_stats_24h"]=adaptive_stats.summary(24)
         R["adaptive_trainer_7d"]=adaptive_trainer.summary(168)
         R["multi_market_trainer_7d"]=multi_market_trainer.summary(168) if config.MULTI_MARKET_TRAINER_V3_ENABLED else {"status":"DISABLED"}
+        R["strategy_tournament_7d"]=strategy_tournament.summary(168) if config.STRATEGY_TOURNAMENT_V5_ENABLED else {"status":"DISABLED"}
     except Exception:
         # Diagnostics must never be able to degrade the trading worker.
         pass
@@ -176,6 +178,13 @@ def main():
                                 "recorded":(ar.get("trainer") or {}).get("recorded"),
                                 "evaluated":(ar.get("trainer") or {}).get("evaluated"),
                             } if ar.get("trainer") else None,
+                            "tournament":{
+                                "best":(ar.get("tournament") or {}).get("best"),
+                                "summary":(ar.get("tournament") or {}).get("summary"),
+                                "champions":len((ar.get("tournament") or {}).get("champions") or []),
+                                "recorded":(ar.get("tournament") or {}).get("recorded"),
+                                "evaluated":(ar.get("tournament") or {}).get("evaluated"),
+                            } if ar.get("tournament") else None,
                         }
                         if ar.get("status")=="OK":
                             R["model_calls"]+=1

@@ -213,6 +213,10 @@ def evaluate(d):
         if risk_pct is None:
             return reject("TRADE_QUALITY_TOO_LOW",{"quality":quality})
 
+    risk_multiplier=float(d.get("tournament_risk_multiplier") or 1.0)
+    risk_multiplier=max(0.10,min(1.0,risk_multiplier))
+    risk_pct=risk_pct*risk_multiplier
+
     risk_usd=eq*risk_pct
     leverage=_leverage(asset,d.get("volatility_regime"),quality,confidence,stop_dist_pct,strategy_mode=strategy_mode,scalp_tier=scalp_tier)
 
@@ -245,6 +249,7 @@ def evaluate(d):
         "scalp_tier":scalp_tier if is_scalp else None,
         "trade_quality":quality,
         "risk_pct_budget":risk_pct,
+        "tournament_risk_multiplier":risk_multiplier,
         "position_notional_usd":notional,
         "actual_risk_usd":notional*stop_dist_pct,
         "actual_risk_pct":(notional*stop_dist_pct/eq) if eq>0 else 0,

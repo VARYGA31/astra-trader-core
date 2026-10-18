@@ -17,6 +17,7 @@ import adaptive_client
 import adaptive_memory
 import adaptive_cost
 import adaptive_trainer
+import strategy_tournament
 
 STATE=Path(config.STATE_DIR)/"adaptive_cycle_state.json"
 
@@ -99,10 +100,14 @@ def _decision_from_best(best, package):
         "adaptive_setup_quality":quality,
         "mtf_quality":quality,
         "scalp_tier":tier if strategy=="SCALP" else None,
-        "decision_policy_version":"adaptive_execution_v4",
+        "decision_policy_version":"strategy_tournament_v5" if config.STRATEGY_TOURNAMENT_V5_ENABLED else "adaptive_execution_v4",
         "time_horizon_minutes":best.get("time_horizon_minutes"),
         "trainer_candidate_id":best.get("candidate_id"),
         "trainer_learning":best.get("trainer_learning"),
+        "strategy_archetype":best.get("strategy_archetype"),
+        "champion_gate":best.get("champion_gate"),
+        "tournament_tier":best.get("tournament_tier"),
+        "tournament_risk_multiplier":best.get("tournament_risk_multiplier"),
     }
 
 def run_once(force=False):
@@ -120,9 +125,17 @@ def run_once(force=False):
         }
 
     trainer=None
+    tournament=None
     if config.ADAPTIVE_TRAINER_V2_ENABLED:
+        # Keep generic Trainer v4 running for broad diagnostics/learning.
         trainer=adaptive_trainer.process(packages)
-        ranked=list(trainer.get("ranked") or [])
+
+        if config.STRATEGY_TOURNAMENT_V5_ENABLED:
+            tournament=strategy_tournament.process(packages)
+            ranked=list(tournament.get("ranked") or [])
+        else:
+            ranked=list(trainer.get("ranked") or [])
+
         threshold=float(
             config.ADAPTIVE_TRAINER_EVENT_MIN_MODEL_QUALITY
             if force else config.ADAPTIVE_TRAINER_MIN_MODEL_QUALITY
@@ -137,12 +150,31 @@ def run_once(force=False):
                 return max(threshold,float(config.SCALP_MIN_QUALITY),float(config.SCALP_MIN_TRADE_CONFIDENCE))
             return max(threshold,float(config.SCALP_FAST_MIN_QUALITY))
 
-        candidates=[x for x in ranked if bool(x.get("execution_eligible")) and bool(x.get("cost_efficient")) and float(x.get("quality") or 0)>=min_quality(x)]
+        if config.STRATEGY_TOURNAMENT_V5_ENABLED:
+            candidates=[
+                x for x in ranked
+                if bool((x.get("champion_gate") or {}).get("champion"))
+                and bool(x.get("execution_eligible"))
+                and bool(x.get("cost_efficient"))
+                and float(x.get("quality") or 0)>=min_quality(x)
+            ]
+            empty_reason="TOURNAMENT_NO_CHAMPION_CANDIDATE"
+        else:
+            candidates=[
+                x for x in ranked
+                if bool(x.get("execution_eligible"))
+                and bool(x.get("cost_efficient"))
+                and float(x.get("quality") or 0)>=min_quality(x)
+            ]
+            empty_reason="TRAINER_NO_ACTIONABLE_CANDIDATE"
+
         plan={
             "call_model":False,
-            "reason":"TRAINER_NO_ACTIONABLE_CANDIDATE",
+            "reason":empty_reason,
             "trainer_best":trainer.get("best"),
             "trainer_actionable":len(candidates),
+            "tournament_best":(tournament or {}).get("best"),
+            "tournament_champions":len((tournament or {}).get("champions") or []),
         }
 
         gap_seconds=adaptive_cost.seconds_since(_load_state().get("last_model_call_at_utc"))
@@ -159,6 +191,7 @@ def run_once(force=False):
                 "hard_guards":_hard_guard_summary(packages),
                 "cost_plan":plan,
                 "trainer":trainer,
+                "tournament":tournament,
                 "learning":learning,
             }
 
@@ -174,6 +207,7 @@ def run_once(force=False):
                 "hard_guards":_hard_guard_summary(packages),
                 "cost_plan":plan,
                 "trainer":trainer,
+                "tournament":tournament,
                 "learning":learning,
             }
 
@@ -187,20 +221,26 @@ def run_once(force=False):
                 "hard_guards":_hard_guard_summary(packages),
                 "cost_plan":plan,
                 "trainer":trainer,
+                "tournament":tournament,
                 "learning":learning,
             }
 
-        selected=candidates[:max(1,int(config.ADAPTIVE_TRAINER_CANDIDATES_TO_MODEL))]
+        max_model_candidates=(
+            int(config.TOURNAMENT_MODEL_CANDIDATES)
+            if config.STRATEGY_TOURNAMENT_V5_ENABLED
+            else int(config.ADAPTIVE_TRAINER_CANDIDATES_TO_MODEL)
+        )
+        selected=candidates[:max(1,max_model_candidates)]
         plan.update({
             "call_model":True,
-            "reason":"TRAINER_ACTIONABLE_CANDIDATE",
+            "reason":"TOURNAMENT_CHAMPION_REVIEW" if config.STRATEGY_TOURNAMENT_V5_ENABLED else "TRAINER_ACTIONABLE_CANDIDATE",
             "budget":budget,
             "candidate_ids":[x.get("candidate_id") for x in selected],
         })
         result=adaptive_client.decide_market(
             packages,
             trainer_candidates=selected,
-            trainer_summary=trainer.get("summary"),
+            trainer_summary=(tournament or trainer).get("summary"),
         )
     else:
         if config.ADAPTIVE_COST_SMART_ENABLED:
@@ -237,13 +277,13 @@ def run_once(force=False):
             "action":"WAIT",
             "reason":best.get("reason") or result.get("market_summary") or "No adaptive opportunity",
             "strategy_mode":"AUTO",
-            "decision_policy_version":"adaptive_execution_v4"
+            "decision_policy_version":"strategy_tournament_v5" if config.STRATEGY_TOURNAMENT_V5_ENABLED else "adaptive_execution_v4"
         }
 
     learning=adaptive_memory.evaluate_due()
     return {
         "status":"OK",
-        "reason":"ADAPTIVE_TRAINER_CYCLE" if config.ADAPTIVE_TRAINER_V2_ENABLED else "ADAPTIVE_CYCLE",
+        "reason":"STRATEGY_TOURNAMENT_V5_CYCLE" if config.STRATEGY_TOURNAMENT_V5_ENABLED else ("ADAPTIVE_TRAINER_CYCLE" if config.ADAPTIVE_TRAINER_V2_ENABLED else "ADAPTIVE_CYCLE"),
         "result":result,
         "decision":decision,
         "execution":execution,
@@ -253,4 +293,5 @@ def run_once(force=False):
         "cost_plan":plan,
         "cost":adaptive_cost.usage_today(),
         "trainer":trainer,
+        "tournament":tournament,
     }

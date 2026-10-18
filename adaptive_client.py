@@ -13,12 +13,12 @@ from openai import OpenAI
 import config
 import adaptive_memory
 
-INSTRUCTIONS = """You are ASTRA ADAPTIVE Trainer v2, a multi-asset trading strategist.
+INSTRUCTIONS = """You are ASTRA Strategy Tournament v5 final selector, a multi-asset trading strategist.
 
-Analyze BTC, ETH and GRAM together, but in Trainer v2 you are primarily a
-FINAL SELECTOR of pre-built candidate plans. The trainer already generated
-risk-aligned entry/stop/targets from fresh OKX data and attached empirical
-shadow-learning statistics. Choose at most ONE candidate or WAIT.
+Analyze BTC, ETH and GRAM together. In Tournament v5 you are a FINAL SELECTOR
+of pre-built CHAMPION candidate plans. Each supplied candidate already passed
+empirical NET-R gates for its asset/archetype/direction/current regime plus
+deterministic execution checks. Choose at most ONE supplied candidate or WAIT.
 NORMAL means a multi-hour trade. SCALP means roughly 5-60 minutes.
 
 You receive raw/derived market evidence, news, guards and selected similar
@@ -31,11 +31,12 @@ IMPORTANT:
 - Do not copy social sentiment or outside traders blindly.
 - Confidence is analytical confidence 0-100, not win probability.
 - Use OKX perpetual last_price as entry reference when available.
-- Candidate plans have already passed a zero-token local opportunity ranking.
-  Do not require perfect alignment across every indicator and do not reject a
-  candidate merely because one indicator is neutral.
-- Approve a candidate when its evidence is coherent, its learned evidence is
-  not clearly negative, and there is no concrete market/news invalidator.
+- Candidate plans have already passed a zero-token strategy tournament and
+  empirical champion gate. Do not re-invent technical thresholds.
+- Use your judgment mainly as a context/news/anomaly veto and to select among
+  multiple empirical champions.
+- Approve a supplied champion when there is no concrete market/news invalidator;
+  do not reject it merely because one indicator is neutral.
 - The payload contains deterministic execution_requirements. Never propose a
   LONG/SHORT that obviously fails those minimum confidence, quality, stop or
   reward/risk requirements. If no candidate satisfies them, return WAIT.
@@ -276,7 +277,7 @@ def normalize(d, packages):
     return {
         "timestamp_utc":datetime.now(timezone.utc).isoformat(),
         "cycle_id":datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ"),
-        "policy_version":"adaptive_execution_v4",
+        "policy_version":"strategy_tournament_v5",
         "market_summary":str(d.get("market_summary") or "")[:1200],
         "assets":assets,
         "best_opportunity":out_best,
@@ -390,8 +391,12 @@ def decide_market(packages, trainer_candidates=None, trainer_summary=None):
                     "take_profit_1":chosen.get("take_profit_1"),
                     "take_profit_2":chosen.get("take_profit_2"),
                     "time_horizon_minutes":chosen.get("time_horizon_minutes"),
-                    "setup_type":"TRAINER_V2",
+                    "setup_type":"TOURNAMENT_V5",
                     "trainer_learning":chosen.get("learning"),
+                    "strategy_archetype":chosen.get("archetype"),
+                    "champion_gate":chosen.get("champion_gate"),
+                    "tournament_tier":chosen.get("tournament_tier"),
+                    "tournament_risk_multiplier":chosen.get("tournament_risk_multiplier"),
                 })
                 out["best_opportunity"]=best
     return out
