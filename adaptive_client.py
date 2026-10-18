@@ -13,12 +13,13 @@ from openai import OpenAI
 import config
 import adaptive_memory
 
-INSTRUCTIONS = """You are ASTRA Strategy Tournament v5 final selector, a multi-asset trading strategist.
+INSTRUCTIONS = """You are ASTRA Strategy Tournament v5.1 final selector, a multi-asset trading strategist.
 
 Analyze BTC, ETH and GRAM together. In Tournament v5 you are a FINAL SELECTOR
-of pre-built CHAMPION candidate plans. Each supplied candidate already passed
-empirical NET-R gates for its asset/archetype/direction/current regime plus
-deterministic execution checks. Choose at most ONE supplied candidate or WAIT.
+of pre-built empirically eligible candidate plans. A supplied plan is either
+CHAMPION or low-risk PROBATION; both already passed broad NET-R evidence,
+independent Tournament-v5 confirmation, current-regime checks, and deterministic
+execution checks. Choose at most ONE supplied candidate or WAIT.
 NORMAL means a multi-hour trade. SCALP means roughly 5-60 minutes.
 
 You receive raw/derived market evidence, news, guards and selected similar
@@ -277,7 +278,7 @@ def normalize(d, packages):
     return {
         "timestamp_utc":datetime.now(timezone.utc).isoformat(),
         "cycle_id":datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ"),
-        "policy_version":"strategy_tournament_v5",
+        "policy_version":"strategy_tournament_v5_1",
         "market_summary":str(d.get("market_summary") or "")[:1200],
         "assets":assets,
         "best_opportunity":out_best,
