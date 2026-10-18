@@ -8,7 +8,7 @@ PAUSED is always allowed and stops only new entries.
 import json,time
 from pathlib import Path
 import requests
-import config,strategy_mode,telegram_notifier,demo_ledger,scalp_stats,adaptive_memory,adaptive_cost,adaptive_stats,adaptive_trainer,multi_market_trainer
+import config,strategy_mode,telegram_notifier,demo_ledger,scalp_stats,adaptive_memory,adaptive_cost,adaptive_stats,adaptive_trainer,multi_market_trainer,strategy_tournament
 from okx_demo_adapter import OKXDemoAdapter
 
 API="https://api.telegram.org"
@@ -31,8 +31,9 @@ def keyboard(section="MAIN"):
         ]
     elif section=="LEARNING":
         rows=[
-            [{"text":"🧪 CRYPTO TRAINER"},{"text":"🌐 LAB OVERVIEW"}],
+            [{"text":"🏆 TOURNAMENT"},{"text":"🧪 CRYPTO TRAINER"}],
             [{"text":"🧠 BRAIN"},{"text":"🎓 LEARNING"}],
+            [{"text":"🌐 LAB OVERVIEW"}],
             [{"text":"⬅️ ГЛАВНАЯ"}],
         ]
     elif section=="MARKETS":
@@ -83,7 +84,7 @@ def _summary():
         f"Demo equity: <b>${float(ledger.get('equity') or 0):.2f}</b>\n\n"
         f"🟦 NORMAL: 4H → 1H → 15M\n"
         f"⚡ SCALP: 1H → 15M → 5M (BTC/ETH/GRAM)\n"
-        f"🧠 AUTO: Trainer v2 тренируется на 5m без токенов; Astra проверяет только готовые кандидаты\n"
+        f"🧠 AUTO: Tournament v5 — торгует только статистически доказанными Champion-сетапами\n"
         f"⏸ PAUSE: новые входы выключены, защита открытой позиции продолжает работать."
     )
 
@@ -184,6 +185,8 @@ def handle_update(update):
         _send(adaptive_cost.telegram_text(),"MONITOR"); return {"status":"OK","action":"COST"}
     if lower in {"/auto_stats","/autostats","/auto_funnel"} or upper=="📊 AUTO STATS":
         _send(adaptive_stats.telegram_text(24),"MONITOR"); return {"status":"OK","action":"AUTO_STATS"}
+    if lower in {"/tournament","/champions","/strategy_tournament"} or upper=="🏆 TOURNAMENT":
+        _send(strategy_tournament.telegram_text(168),"LEARNING"); return {"status":"OK","action":"TOURNAMENT"}
     if lower in {"/trainer","/train","/trainer_stats"} or upper in {"🧪 TRAINER","🧪 CRYPTO TRAINER"}:
         _send(adaptive_trainer.telegram_text(168),"LEARNING"); return {"status":"OK","action":"TRAINER"}
     if lower in {"/lab","/markets","/lab_stats"} or upper=="🌐 LAB OVERVIEW":
@@ -200,7 +203,7 @@ def handle_update(update):
     _send(
         "Главное меню: 🎛 РЕЖИМЫ · 📊 МОНИТОРИНГ · 🧪 ОБУЧЕНИЕ · 🌐 РЫНКИ\n"
         "Команды: /normal /scalp /auto /pause /status /cost /auto_stats "
-        "/scalp_stats /trainer /lab /gold /defi /brain /learning",
+        "/scalp_stats /tournament /trainer /lab /gold /defi /brain /learning",
         "MAIN"
     )
     return {"status":"OK","action":"HELP"}
