@@ -294,7 +294,17 @@ def telegram_text():
         ),
         "",
     ]
-    if config.ADAPTIVE_TRAINER_V2_ENABLED:
+    if config.STRATEGY_TOURNAMENT_V5_ENABLED:
+        lines += [
+            "Mode: <b>STRATEGY TOURNAMENT v5</b>",
+            f"Model min gap: <b>{config.ADAPTIVE_TRAINER_MODEL_MIN_GAP_MINUTES} min</b>",
+            f"Champion samples: <b>{config.TOURNAMENT_MIN_SAMPLES}+</b>",
+            f"Champion min NET R: <b>{config.TOURNAMENT_MIN_AVG_NET_R:+.2f}R</b>",
+            "Нет фоновых baseline-вызовов Astra.",
+            "Challenger-стратегии тренируются локально без OpenAI API.",
+            "Astra вызывается только для эмпирически доказанного Champion-кандидата.",
+        ]
+    elif config.ADAPTIVE_TRAINER_V2_ENABLED:
         lines += [
             "Mode: <b>TRAINER v2 event-driven</b>",
             f"Model min gap: <b>{config.ADAPTIVE_TRAINER_MODEL_MIN_GAP_MINUTES} min</b>",
