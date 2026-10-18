@@ -344,7 +344,11 @@ def _metrics(rows):
         if r is not None:vals.append(r)
     n=len(vals)
     if not n:
-        return {"samples":0,"avg_net_r":0.0,"profit_factor":0.0,"win_rate":0.0,"max_drawdown_r":0.0,"lower_bound_r":-999.0}
+        return {
+            "samples":0,"avg_net_r":0.0,"profit_factor":0.0,"win_rate":0.0,
+            "max_drawdown_r":0.0,"lower_bound_r":-999.0,
+            "total_net_r":0.0,"recovery_factor":0.0,
+        }
     avg=sum(vals)/n
     gp=sum(v for v in vals if v>0);gl=-sum(v for v in vals if v<0)
     pf=(gp/gl) if gl>1e-12 else (99.0 if gp>0 else 0.0)
@@ -355,6 +359,8 @@ def _metrics(rows):
     var=sum((v-avg)**2 for v in vals)/(n-1) if n>1 else 0.0
     se=math.sqrt(var)/math.sqrt(n) if n else 0.0
     lower=avg-se
+    total=sum(vals)
+    recovery=(total/maxdd) if maxdd>1e-12 else (99.0 if total>0 else 0.0)
     return {
         "samples":n,
         "avg_net_r":round(avg,4),
@@ -362,6 +368,8 @@ def _metrics(rows):
         "win_rate":round(wins/n,4),
         "max_drawdown_r":round(maxdd,3),
         "lower_bound_r":round(lower,4),
+        "total_net_r":round(total,3),
+        "recovery_factor":round(recovery,3),
     }
 
 def _candidate_stats(candidate,rows=None):
@@ -371,39 +379,77 @@ def _candidate_stats(candidate,rows=None):
     broad=[x for x in rows if x.get("asset")==asset and infer_archetype(x)==arch and x.get("direction")==direction]
     exact=[x for x in broad if _regime_base(x.get("market_regime"))==regime]
     overall=[x for x in rows if x.get("asset")==asset and infer_archetype(x)==arch]
+    own=[x for x in broad if str(x.get("source") or "")=="TOURNAMENT_V5"]
+    own_regime=[x for x in own if _regime_base(x.get("market_regime"))==regime]
     return {
         "broad":_metrics(broad),
         "regime":_metrics(exact),
+        "own":_metrics(own),
+        "own_regime":_metrics(own_regime),
         "overall":_metrics(overall),
         "regime_key":regime,
     }
 
 def champion_gate(candidate,rows=None):
     st=_candidate_stats(candidate,rows)
-    b=st["broad"];r=st["regime"]
-    reasons=[]
-    if b["samples"]<int(config.TOURNAMENT_MIN_SAMPLES):reasons.append("BROAD_SAMPLES")
-    if b["avg_net_r"]<float(config.TOURNAMENT_MIN_AVG_NET_R):reasons.append("BROAD_NET_R")
-    if b["profit_factor"]<float(config.TOURNAMENT_MIN_PROFIT_FACTOR):reasons.append("BROAD_PROFIT_FACTOR")
-    if b["max_drawdown_r"]>float(config.TOURNAMENT_MAX_DRAWDOWN_R):reasons.append("BROAD_DRAWDOWN")
-    if b["lower_bound_r"]<float(config.TOURNAMENT_MIN_LOWER_BOUND_R):reasons.append("BROAD_LOWER_BOUND")
-    # Regime evidence protects against a strategy that is good overall but bad
-    # in the market state currently being traded.
-    min_regime=max(15,min(30,int(config.TOURNAMENT_MIN_SAMPLES)//2))
-    if r["samples"]<min_regime:reasons.append("REGIME_SAMPLES")
-    if r["samples"]>=min_regime and r["avg_net_r"]<0.0:reasons.append("REGIME_NET_R")
-    if r["samples"]>=min_regime and r["profit_factor"]<1.0:reasons.append("REGIME_PROFIT_FACTOR")
+    b=st["broad"];r=st["regime"];own=st["own"]
+    broad_reasons=[]
+    if b["samples"]<int(config.TOURNAMENT_MIN_SAMPLES):broad_reasons.append("BROAD_SAMPLES")
+    if b["avg_net_r"]<float(config.TOURNAMENT_MIN_AVG_NET_R):broad_reasons.append("BROAD_NET_R")
+    if b["profit_factor"]<float(config.TOURNAMENT_MIN_PROFIT_FACTOR):broad_reasons.append("BROAD_PROFIT_FACTOR")
+    if b["recovery_factor"]<float(config.TOURNAMENT_MIN_RECOVERY_FACTOR):broad_reasons.append("BROAD_RECOVERY")
+    if b["lower_bound_r"]<float(config.TOURNAMENT_MIN_LOWER_BOUND_R):broad_reasons.append("BROAD_LOWER_BOUND")
+    # Historical v4 data is only a prior. Tournament-v5 must confirm the same
+    # asset/archetype/direction with its own clean shadow outcomes.
+    if own["samples"]<int(config.TOURNAMENT_MIN_OWN_SAMPLES):broad_reasons.append("OWN_SAMPLES")
+    if own["avg_net_r"]<float(config.TOURNAMENT_MIN_OWN_AVG_NET_R):broad_reasons.append("OWN_NET_R")
+    if own["profit_factor"]<float(config.TOURNAMENT_MIN_OWN_PROFIT_FACTOR):broad_reasons.append("OWN_PROFIT_FACTOR")
 
-    champion=not reasons
-    mature=champion and b["samples"]>=int(config.TOURNAMENT_MATURE_SAMPLES)
-    risk_mult=(
-        float(config.TOURNAMENT_RISK_MULTIPLIER_MATURE)
-        if mature else float(config.TOURNAMENT_RISK_MULTIPLIER_NEW)
-    )
+    broad_ok=not broad_reasons
+    tier="CHALLENGER"
+    reasons=list(broad_reasons)
+    eligible=False
+    risk_mult=0.0
+
+    if broad_ok:
+        champion_regime=(
+            r["samples"]>=int(config.TOURNAMENT_CHAMPION_MIN_REGIME_SAMPLES)
+            and r["avg_net_r"]>=float(config.TOURNAMENT_CHAMPION_MIN_REGIME_AVG_NET_R)
+            and r["profit_factor"]>=float(config.TOURNAMENT_CHAMPION_MIN_REGIME_PROFIT_FACTOR)
+        )
+        probation_regime=(
+            r["samples"]>=int(config.TOURNAMENT_PROBATION_MIN_REGIME_SAMPLES)
+            and r["avg_net_r"]>=float(config.TOURNAMENT_PROBATION_MIN_REGIME_AVG_NET_R)
+            and r["profit_factor"]>=float(config.TOURNAMENT_PROBATION_MIN_REGIME_PROFIT_FACTOR)
+        )
+        if champion_regime:
+            mature=own["samples"]>=int(config.TOURNAMENT_MATURE_SAMPLES)
+            tier="MATURE" if mature else "CHAMPION"
+            eligible=True
+            risk_mult=(
+                float(config.TOURNAMENT_RISK_MULTIPLIER_MATURE)
+                if mature else float(config.TOURNAMENT_RISK_MULTIPLIER_NEW)
+            )
+        elif probation_regime:
+            tier="PROBATION"
+            eligible=True
+            risk_mult=float(config.TOURNAMENT_RISK_MULTIPLIER_PROBATION)
+            reasons=["REGIME_PROBATION"]
+        else:
+            if r["samples"]<int(config.TOURNAMENT_PROBATION_MIN_REGIME_SAMPLES):
+                reasons.append("REGIME_SAMPLES")
+            if r["samples"]>=int(config.TOURNAMENT_PROBATION_MIN_REGIME_SAMPLES) and r["avg_net_r"]<float(config.TOURNAMENT_PROBATION_MIN_REGIME_AVG_NET_R):
+                reasons.append("REGIME_NET_R")
+            if r["samples"]>=int(config.TOURNAMENT_PROBATION_MIN_REGIME_SAMPLES) and r["profit_factor"]<float(config.TOURNAMENT_PROBATION_MIN_REGIME_PROFIT_FACTOR):
+                reasons.append("REGIME_PROFIT_FACTOR")
+
     return {
-        "champion":champion,
-        "tier":"MATURE" if mature else "NEW" if champion else "CHALLENGER",
-        "risk_multiplier":risk_mult if champion else 0.0,
+        "champion":tier in {"CHAMPION","MATURE"},
+        "probation":tier=="PROBATION",
+        "eligible":eligible,
+        "broad_qualified":broad_ok,
+        "tier":tier,
+        "risk_multiplier":risk_mult if eligible else 0.0,
         "reasons":reasons,
         "stats":st,
     }
@@ -426,7 +472,7 @@ def rank_candidates(packages):
         x["tournament_risk_multiplier"]=gate["risk_multiplier"]
         ranked.append(x)
     ranked.sort(key=lambda x:(
-        1 if (x.get("champion_gate") or {}).get("champion") else 0,
+        2 if (x.get("champion_gate") or {}).get("champion") else 1 if (x.get("champion_gate") or {}).get("probation") else 0,
         float(((x.get("champion_gate") or {}).get("stats") or {}).get("broad",{}).get("avg_net_r") or -99),
         float(x.get("quality") or 0)
     ),reverse=True)
@@ -497,7 +543,7 @@ def process(packages):
     recorded=record_shadow(ranked)
     champions=[
         x for x in ranked
-        if bool((x.get("champion_gate") or {}).get("champion"))
+        if bool((x.get("champion_gate") or {}).get("eligible"))
         and bool(x.get("execution_eligible"))
         and bool(x.get("cost_efficient"))
     ]
@@ -529,18 +575,27 @@ def summary(hours=168):
     ]
     rows=boot+own
     leaderboard=[]
+    own_groups=_broad_groups(own)
     for (asset,arch,direction),bucket in _broad_groups(rows).items():
         m=_metrics(bucket)
-        champion=(
+        om=_metrics(own_groups.get((asset,arch,direction),[]))
+        qualified=(
             m["samples"]>=int(config.TOURNAMENT_MIN_SAMPLES)
             and m["avg_net_r"]>=float(config.TOURNAMENT_MIN_AVG_NET_R)
             and m["profit_factor"]>=float(config.TOURNAMENT_MIN_PROFIT_FACTOR)
-            and m["max_drawdown_r"]<=float(config.TOURNAMENT_MAX_DRAWDOWN_R)
+            and m["recovery_factor"]>=float(config.TOURNAMENT_MIN_RECOVERY_FACTOR)
             and m["lower_bound_r"]>=float(config.TOURNAMENT_MIN_LOWER_BOUND_R)
+            and om["samples"]>=int(config.TOURNAMENT_MIN_OWN_SAMPLES)
+            and om["avg_net_r"]>=float(config.TOURNAMENT_MIN_OWN_AVG_NET_R)
+            and om["profit_factor"]>=float(config.TOURNAMENT_MIN_OWN_PROFIT_FACTOR)
         )
         leaderboard.append({
             "asset":asset,"archetype":arch,"direction":direction,
-            **m,"broad_champion":champion,
+            **m,
+            "own_samples":om["samples"],
+            "own_avg_net_r":om["avg_net_r"],
+            "own_profit_factor":om["profit_factor"],
+            "broad_champion":qualified,
         })
     leaderboard.sort(key=lambda x:(1 if x["broad_champion"] else 0,x["avg_net_r"],x["samples"]),reverse=True)
     return {
@@ -559,11 +614,11 @@ def summary(hours=168):
 def telegram_text(hours=168):
     s=summary(hours)
     lines=[
-        f"🏆 <b>STRATEGY TOURNAMENT v5 — {int(float(hours))}h</b>","",
+        f"🏆 <b>STRATEGY TOURNAMENT v5.1 — {int(float(hours))}h</b>","",
         f"Shadow challengers: <b>{s.get('shadow_candidates',0)}</b>",
         f"Own evaluated: <b>{s.get('own_evaluated',0)}</b>",
         f"Bootstrap v4 evidence: <b>{s.get('bootstrap_evaluated',0)}</b>",
-        f"Broad champions: <b>{len(s.get('broad_champions') or [])}</b>","",
+        f"Broad-qualified: <b>{len(s.get('broad_champions') or [])}</b>","",
         "<b>Leaderboard:</b>",
     ]
     board=s.get("leaderboard") or []
@@ -573,11 +628,13 @@ def telegram_text(hours=168):
         icon="🏆" if x.get("broad_champion") else "🧪"
         lines.append(
             f"{icon} {x['asset']} {x['archetype']} {x['direction']} | "
-            f"n={x['samples']} | {x['avg_net_r']:+.3f}R | PF {x['profit_factor']:.2f}"
+            f"all n={x['samples']} {x['avg_net_r']:+.3f}R PF {x['profit_factor']:.2f} | "
+            f"v5 n={x.get('own_samples',0)} {x.get('own_avg_net_r',0):+.3f}R"
         )
     lines += [
         "",
-        "В OKX Demo допускается только кандидат, который проходит и broad, и текущий regime gate.",
+        "OKX Demo: CHAMPION торгует малым риском; PROBATION — только 0.25x risk budget.",
+        "Bootstrap v4 — только prior: для допуска обязательна собственная статистика v5.",
         "Challengers продолжают shadow-обучение без OpenAI и без ордеров.",
     ]
     return "\n".join(lines)

@@ -84,7 +84,7 @@ def _summary():
         f"Demo equity: <b>${float(ledger.get('equity') or 0):.2f}</b>\n\n"
         f"🟦 NORMAL: 4H → 1H → 15M\n"
         f"⚡ SCALP: 1H → 15M → 5M (BTC/ETH/GRAM)\n"
-        f"🧠 AUTO: Tournament v5 — торгует только статистически доказанными Champion-сетапами\n"
+        f"🧠 AUTO: Tournament v5.1 — CHAMPION + малорисковый PROBATION по подтверждённой статистике\n"
         f"⏸ PAUSE: новые входы выключены, защита открытой позиции продолжает работать."
     )
 
