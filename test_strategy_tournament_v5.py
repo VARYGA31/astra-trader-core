@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pure Strategy Tournament v5 regression. No network, OpenAI or orders."""
+"""Pure Strategy Tournament v5.1 regression. No network, OpenAI or orders."""
 import json
 from datetime import datetime,timezone,timedelta
 
@@ -71,12 +71,15 @@ for i in range(60):
         "tags":trend["tags"],
         "net_r":0.8 if i%2==0 else -0.3,
         "r_result":0.8 if i%2==0 else -0.3,
+        "source":"TOURNAMENT_V5",
     })
 gate=strategy_tournament.champion_gate(trend,positive)
 assert gate["champion"] is True,gate
 assert gate["stats"]["broad"]["avg_net_r"]>0,gate
 assert gate["stats"]["broad"]["profit_factor"]>1,gate
 assert gate["risk_multiplier"]<=1.0,gate
+assert gate["stats"]["own"]["samples"]==60,gate
+assert gate["stats"]["broad"]["recovery_factor"]>=config.TOURNAMENT_MIN_RECOVERY_FACTOR,gate
 
 negative=[]
 for i in range(60):
@@ -88,9 +91,43 @@ for i in range(60):
         "tags":trend["tags"],
         "net_r":0.2 if i%3==0 else -0.7,
         "r_result":0.2 if i%3==0 else -0.7,
+        "source":"TOURNAMENT_V5",
     })
 bad=strategy_tournament.champion_gate(trend,negative)
-assert bad["champion"] is False,bad
+assert bad["eligible"] is False,bad
+
+# Bootstrap alone can never promote an execution candidate.
+bootstrap_only=[]
+for x in positive:
+    y=dict(x);y["source"]="BOOTSTRAP_V4_GENERIC";bootstrap_only.append(y)
+prior=strategy_tournament.champion_gate(trend,bootstrap_only)
+assert prior["eligible"] is False,prior
+assert "OWN_SAMPLES" in prior["reasons"],prior
+
+# A strong broad strategy with only lightly-sampled non-negative regime data
+# enters PROBATION at 0.25x risk rather than being blocked indefinitely.
+mixed=[]
+for i in range(30):
+    y=dict(positive[i])
+    y["market_regime"]="TREND_UP|VOL_HIGH"
+    mixed.append(y)
+for i in range(30,60):
+    y=dict(positive[i])
+    y["market_regime"]="TREND_DOWN|VOL_NORMAL"
+    mixed.append(y)
+prob_candidate=dict(trend);prob_candidate["market_regime"]="TREND_UP|VOL_HIGH"
+# Keep exactly 6 current-regime samples and make them around flat-positive.
+for i in range(6):
+    mixed[i]["net_r"]=0.12 if i%2==0 else -0.08
+    mixed[i]["r_result"]=mixed[i]["net_r"]
+# Move the remaining TREND_UP rows to another regime so only six match.
+for i in range(6,30):
+    mixed[i]["market_regime"]="RANGE|VOL_NORMAL"
+prob=strategy_tournament.champion_gate(prob_candidate,mixed)
+assert prob["eligible"] is True,prob
+assert prob["probation"] is True,prob
+assert prob["tier"]=="PROBATION",prob
+assert abs(prob["risk_multiplier"]-config.TOURNAMENT_RISK_MULTIPLIER_PROBATION)<1e-12,prob
 
 # Risk Engine must reduce, never increase, risk for new tournament champions.
 decision={
@@ -117,6 +154,8 @@ print(json.dumps({
     "archetypes":sorted(config.TOURNAMENT_ARCHETYPES),
     "positive_champion":"OK",
     "negative_challenger":"OK",
+    "bootstrap_prior_only":"OK",
+    "probation_tier":"OK",
     "champion_risk_scaling":"OK",
     "positive_avg_net_r":gate["stats"]["broad"]["avg_net_r"],
     "positive_profit_factor":gate["stats"]["broad"]["profit_factor"],
