@@ -181,7 +181,7 @@ def _okx_confirmed_candles(inst, bar, limit=300):
 def okx_multi_timeframe(inst):
     frames={}
     errors=[]
-    for name,bar in (("5m","5m"),("15m","15m"),("1h","1H"),("4h","4H")):
+    for name,bar in (("1m","1m"),("3m","3m"),("5m","5m"),("15m","15m"),("1h","1H"),("4h","4H")):
         try:
             rows=_okx_confirmed_candles(inst,bar,300)
             frames[name]=_tf_features(rows,name)
@@ -190,7 +190,7 @@ def okx_multi_timeframe(inst):
             errors.append(f"{name}:{e}")
     ok=sum(1 for x in frames.values() if x.get("status")=="OK")
     return {
-        "status":"OK" if ok==4 else "PARTIAL" if ok else "FAILED",
+        "status":"OK" if ok==6 else "PARTIAL" if ok else "FAILED",
         "source":"OKX_SWAP_CONFIRMED_CANDLES",
         "frames":frames,
         "errors":errors,
