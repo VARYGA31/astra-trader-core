@@ -137,12 +137,16 @@ def _compact_candidates(mtf):
     for c in (mtf or {}).get("candidates",[]) or []:
         trig15=c.get("trigger_15m") or {}
         trig5=c.get("trigger_5m") or {}
+        trig1=c.get("trigger_1m") or {}
         out.append({
             "direction":c.get("direction"),"passed":bool(c.get("passed")),"mode":c.get("mode"),"quality":c.get("quality"),
             "regime_4h_ok":c.get("regime_4h_ok"),"setup_1h_ok":c.get("setup_1h_ok"),
             "trigger_15m_confirmed":trig15.get("confirmed"),"trigger_15m_count":trig15.get("count"),
             "regime_1h_ok":c.get("regime_1h_ok"),"setup_15m_ok":c.get("setup_15m_ok"),
             "trigger_5m_confirmed":trig5.get("confirmed"),"trigger_5m_count":trig5.get("count"),
+            "micro_context_5m_ok":c.get("context_5m_ok"),"micro_setup_3m_ok":c.get("setup_3m_ok"),
+            "trigger_1m_confirmed":trig1.get("confirmed"),"trigger_1m_count":trig1.get("count"),
+            "micro_score_5m":c.get("score_5m"),"micro_score_3m":c.get("score_3m"),
         })
     return out
 
@@ -163,6 +167,8 @@ def _compact_market(package):
     mtf = m.get("multi_timeframe", {})
     return {
         "price": spot.get("price"),
+        "microstructure_source":spot.get("microstructure_source"),
+        "microstructure_spread_pct":spot.get("microstructure_spread_pct"),
         "data_quality": m.get("data_quality"),
         "mtf_status": mtf.get("status"),
     }
@@ -238,6 +244,10 @@ def record_decision(package, gate, decision, execution, model_called=False):
                 "status": exec_status,
                 "reason": exec_reason,
                 "stage": execution.get("stage"),
+                "micro_net_edge":(
+                    (execution.get("micro_net_edge") or {})
+                    or ((execution.get("execution_quality") or {}).get("micro_net_edge") or {})
+                ),
             },
         }
         _append_jsonl(DECISIONS, row)
@@ -296,6 +306,8 @@ def record_decision(package, gate, decision, execution, model_called=False):
                 "actual_tp2_r": trade.get("tp2_r"),
                 "leverage": trade.get("leverage"),
                 "notional_usd": trade.get("notional_usd"),
+                "micro_net_edge":trade.get("micro_net_edge"),
+                "micro_fee_info":trade.get("micro_fee_info"),
             }
 
         # "Trade rejection" means a model produced a non-WAIT trade idea but
@@ -337,6 +349,11 @@ def record_decision(package, gate, decision, execution, model_called=False):
                     "setup_15m_ok": best.get("setup_15m_ok"),
                     "trigger_5m_confirmed": best.get("trigger_5m_confirmed"),
                     "trigger_5m_count": best.get("trigger_5m_count"),
+                    "micro_context_5m_ok":best.get("micro_context_5m_ok"),
+                    "micro_setup_3m_ok":best.get("micro_setup_3m_ok"),
+                    "trigger_1m_confirmed":best.get("trigger_1m_confirmed"),
+                    "trigger_1m_count":best.get("trigger_1m_count"),
+                    "microstructure_source":row.get("market",{}).get("microstructure_source"),
                     "blocked_reason": gate_reason if not model_called else (exec_reason or decision.get("reason") or exec_status),
                     "model_called": bool(model_called),
                     "model_action": action if model_called else None,

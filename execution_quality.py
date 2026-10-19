@@ -76,6 +76,53 @@ def audit_price(action, entry, stop, tp1, tp2, min_tp1_r, min_tp2_r):
         "minimum_tp2_r":float(min_tp2_r),
     }
 
+def micro_net_edge(entry, stop, tp1, tp2, taker_fee_pct_per_side=None, slippage_pct_per_side=None):
+    """Estimate MICRO profitability after round-trip taker fees + slippage.
+
+    Percent inputs are percentage points (0.05 means 0.05%), matching the rest
+    of this module. This is a conservative pre-trade estimate, not a promise.
+    """
+    entry=float(entry); stop=float(stop); tp1=float(tp1); tp2=float(tp2)
+    risk_pct=(abs(entry-stop)/entry*100.0) if entry>0 else 0.0
+    fee=float(
+        config.MICRO_FALLBACK_TAKER_FEE_PCT_PER_SIDE
+        if taker_fee_pct_per_side is None else taker_fee_pct_per_side
+    )
+    slip=float(
+        config.MICRO_ESTIMATED_SLIPPAGE_PCT_PER_SIDE
+        if slippage_pct_per_side is None else slippage_pct_per_side
+    )
+    cost_pct=2.0*(max(0.0,fee)+max(0.0,slip))
+    if risk_pct<=0:
+        return {"passed":False,"reason":"INVALID_MICRO_RISK_DISTANCE"}
+
+    gross1=abs(tp1-entry)/entry*100.0
+    gross2=abs(tp2-entry)/entry*100.0
+    cost_r=cost_pct/risk_pct
+    net1=(gross1-cost_pct)/risk_pct
+    net2=(gross2-cost_pct)/risk_pct
+    passed=(
+        cost_r<=float(config.MICRO_MAX_ROUNDTRIP_COST_R)+1e-12
+        and net1>=float(config.MICRO_MIN_NET_TP1_R)-1e-12
+        and net2>=float(config.MICRO_MIN_NET_TP2_R)-1e-12
+    )
+    return {
+        "passed":passed,
+        "reason":"OK" if passed else "MICRO_NET_EDGE_TOO_LOW",
+        "risk_distance_pct":risk_pct,
+        "taker_fee_pct_per_side":fee,
+        "estimated_slippage_pct_per_side":slip,
+        "estimated_roundtrip_cost_pct":cost_pct,
+        "cost_r":cost_r,
+        "gross_tp1_r":gross1/risk_pct,
+        "gross_tp2_r":gross2/risk_pct,
+        "net_tp1_r":net1,
+        "net_tp2_r":net2,
+        "maximum_cost_r":float(config.MICRO_MAX_ROUNDTRIP_COST_R),
+        "minimum_net_tp1_r":float(config.MICRO_MIN_NET_TP1_R),
+        "minimum_net_tp2_r":float(config.MICRO_MIN_NET_TP2_R),
+    }
+
 def adverse_slippage_pct(action, reference, fill):
     action=str(action).upper()
     reference=float(reference); fill=float(fill)

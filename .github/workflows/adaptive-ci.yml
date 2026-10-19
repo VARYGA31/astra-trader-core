@@ -21,6 +21,8 @@ jobs:
         run: pip install -r requirements.txt
       - name: Repository self-check
         run: python repo_selfcheck.py
+      - name: Offline end-to-end preflight
+        run: python preflight_all.py
       - name: Adaptive mode pure test
         run: python test_adaptive_mode.py
       - name: Adaptive Cost-Smart pure test
@@ -47,6 +49,14 @@ jobs:
         run: python test_scalp_v2.py
       - name: MICRO v1 regression
         run: python test_micro_mode.py
+      - name: MICRO v2 profitability regression
+        run: python test_micro_v2.py
+      - name: Pure guard/config regressions
+        run: |
+          python test_no_null_bytes.py
+          python test_scalp_mode.py
+          python test_scalp_stats.py
+          python test_treasury_parser.py
       - name: Observability regression
         run: python test_observability.py
       - name: Transition regression

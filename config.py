@@ -16,6 +16,7 @@ STALE_MARKET_SECONDS=int(os.getenv("STALE_MARKET_SECONDS","180"))
 MIN_NEWS_SOURCE_SUCCESSES=int(os.getenv("MIN_NEWS_SOURCE_SUCCESSES","2"))
 COOLDOWN_SECONDS=int(os.getenv("COOLDOWN_SECONDS","900"))
 NEWS_POLL_SECONDS=int(os.getenv("NEWS_POLL_SECONDS","20"))
+NEWS_CACHE_MAX_AGE_SECONDS=int(os.getenv("NEWS_CACHE_MAX_AGE_SECONDS","60"))
 POSITION_POLL_SECONDS=int(os.getenv("POSITION_POLL_SECONDS","10"))
 DECISION_INTERVAL_SECONDS=int(os.getenv("DECISION_INTERVAL_SECONDS","3600"))
 WORKER_TICK_SECONDS=int(os.getenv("WORKER_TICK_SECONDS","2"))
@@ -36,6 +37,8 @@ OKX_API_KEY=os.getenv("OKX_API_KEY","").strip()
 OKX_API_SECRET=os.getenv("OKX_API_SECRET","").strip()
 OKX_API_PASSPHRASE=os.getenv("OKX_API_PASSPHRASE","").strip()
 OKX_BASE_URL=os.getenv("OKX_BASE_URL","https://www.okx.com").rstrip("/")
+# Port 443 is the durable OKX public WebSocket endpoint. 8443 is being retired.
+OKX_PUBLIC_WS_URL=os.getenv("OKX_PUBLIC_WS_URL","wss://wspap.okx.com/ws/v5/public").strip()
 OKX_TD_MODE=os.getenv("OKX_TD_MODE","isolated").strip()
 TELEGRAM_ENABLED=os.getenv("TELEGRAM_ENABLED","false").lower()=="true"
 TELEGRAM_BOT_TOKEN=os.getenv("TELEGRAM_BOT_TOKEN","").strip()
@@ -230,8 +233,9 @@ SCALP_FAST_LEVERAGE_HIGH_VOL = float(os.getenv("SCALP_FAST_LEVERAGE_HIGH_VOL", "
 SCALP_FAST_LEVERAGE_NORMAL = float(os.getenv("SCALP_FAST_LEVERAGE_NORMAL", "3"))
 SCALP_FAST_MAX_LEVERAGE = float(os.getenv("SCALP_FAST_MAX_LEVERAGE", "3"))
 
-# ===== ASTRA MICRO v1 =====
+# ===== ASTRA MICRO v2 =====
 # Demo-first 1-5 minute execution laboratory: 5m context -> 3m setup -> 1m trigger.
+# v2 adds OKX-native microstructure + fee-aware NET expectancy protection.
 MICRO_ALLOWED_ASSETS = tuple(
     x.strip().upper() for x in os.getenv("MICRO_ALLOWED_ASSETS", "BTC,ETH,GRAM").split(",") if x.strip()
 )
@@ -270,6 +274,31 @@ MICRO_MAX_HOLD_SECONDS = int(os.getenv("MICRO_MAX_HOLD_SECONDS", "300"))
 MICRO_COOLDOWN_SECONDS = int(os.getenv("MICRO_COOLDOWN_SECONDS", "60"))
 MICRO_STOP_LOSS_COOLDOWN_SECONDS = int(os.getenv("MICRO_STOP_LOSS_COOLDOWN_SECONDS", "180"))
 MICRO_MAX_ENTRY_SLIPPAGE_PCT = float(os.getenv("MICRO_MAX_ENTRY_SLIPPAGE_PCT", "0.04"))
+
+# MICRO v2 market-data path. WebSocket is preferred; REST remains the fallback.
+MICRO_WS_ENABLED = os.getenv("MICRO_WS_ENABLED", "true").lower() == "true"
+MICRO_WS_STALE_SECONDS = float(os.getenv("MICRO_WS_STALE_SECONDS", "5"))
+MICRO_WS_RECONNECT_SECONDS = float(os.getenv("MICRO_WS_RECONNECT_SECONDS", "2"))
+MICRO_WS_TRADE_BUFFER = int(os.getenv("MICRO_WS_TRADE_BUFFER", "1200"))
+MICRO_FLOW_WINDOW_SECONDS = float(os.getenv("MICRO_FLOW_WINDOW_SECONDS", "30"))
+
+# Fee-aware MICRO profitability guard. Fees are read from the actual OKX demo
+# account when available; these values are conservative fallback assumptions.
+MICRO_FALLBACK_TAKER_FEE_PCT_PER_SIDE = float(os.getenv("MICRO_FALLBACK_TAKER_FEE_PCT_PER_SIDE", "0.05"))
+MICRO_ESTIMATED_SLIPPAGE_PCT_PER_SIDE = float(os.getenv("MICRO_ESTIMATED_SLIPPAGE_PCT_PER_SIDE", "0.02"))
+MICRO_MAX_ROUNDTRIP_COST_R = float(os.getenv("MICRO_MAX_ROUNDTRIP_COST_R", "0.55"))
+MICRO_MIN_NET_TP1_R = float(os.getenv("MICRO_MIN_NET_TP1_R", "0.25"))
+MICRO_MIN_NET_TP2_R = float(os.getenv("MICRO_MIN_NET_TP2_R", "0.80"))
+MICRO_FEE_CACHE_SECONDS = int(os.getenv("MICRO_FEE_CACHE_SECONDS", "3600"))
+
+# MICRO has its own short-horizon loss-streak pause; it must not inherit the
+# six-hour NORMAL pause after a few one-minute experiments.
+MICRO_LOSS_STREAK_LIMIT = int(os.getenv("MICRO_LOSS_STREAK_LIMIT", "3"))
+MICRO_LOSS_STREAK_PAUSE_SECONDS = int(os.getenv("MICRO_LOSS_STREAK_PAUSE_SECONDS", "900"))
+
+# Persistent diagnostics.
+MICRO_STATS_LOG_MAX_MB = float(os.getenv("MICRO_STATS_LOG_MAX_MB", "10"))
+MICRO_STATS_DEFAULT_HOURS = int(os.getenv("MICRO_STATS_DEFAULT_HOURS", "6"))
 
 # Persistent diagnostics used by /scalp_stats.
 SCALP_STATS_LOG_MAX_MB = float(os.getenv("SCALP_STATS_LOG_MAX_MB", "10"))

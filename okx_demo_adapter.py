@@ -13,6 +13,8 @@ import requests
 import config
 from asset_map import ASSETS
 
+_FEE_CACHE = {}
+
 class OKXAPIError(RuntimeError):
     pass
 
@@ -115,6 +117,71 @@ class OKXDemoAdapter:
 
     def ticker(self, asset):
         return float(self.ticker_row(asset)["last"])
+
+    def fee_rates(self, asset):
+        """Return current account fee rates for this SWAP in percentage units.
+
+        OKX is migrating fee responses to feeGroup. We prefer the instrument's
+        groupId and keep legacy taker/takerU parsing only as a compatibility
+        fallback. Values are returned as positive cost percentages.
+        """
+        asset=str(asset or "").upper()
+        cached=_FEE_CACHE.get(asset)
+        if cached and time.time()-cached["cached_at"] < float(config.MICRO_FEE_CACHE_SECONDS):
+            return dict(cached["value"])
+
+        info=self.instrument(asset)
+        group_id=""
+        # Current OKX API exposes the account-specific fee group through the
+        # authenticated account/instruments endpoint. Fall back to public
+        # metadata/instFamily only if that lookup is unavailable.
+        try:
+            rows=self.private_get("/api/v5/account/instruments",{"instType":"SWAP"}).get("data",[])
+            target=self.inst_id(asset)
+            acc=next((x for x in rows if str(x.get("instId") or "")==target),None)
+            group_id=str((acc or {}).get("groupId") or "").strip()
+        except Exception:
+            group_id=""
+        if not group_id:
+            group_id=str(info.get("groupId") or "").strip()
+        params={"instType":"SWAP"}
+        if group_id:
+            params["groupId"]=group_id
+        else:
+            params["instFamily"]=self.inst_id(asset).rsplit("-SWAP",1)[0]
+
+        data=self.private_get("/api/v5/account/trade-fee",params).get("data",[])
+        if not data:
+            raise RuntimeError(f"OKX_FEE_RATE_EMPTY:{asset}")
+        row=data[0]
+        fee_group=row.get("feeGroup") or []
+        selected=None
+        if fee_group:
+            if group_id:
+                selected=next((x for x in fee_group if str(x.get("groupId") or "")==group_id),None)
+            selected=selected or fee_group[0]
+
+        raw_taker=(selected or {}).get("taker")
+        raw_maker=(selected or {}).get("maker")
+        if raw_taker in (None,""):
+            raw_taker=row.get("takerU") or row.get("takerUSDC") or row.get("taker")
+        if raw_maker in (None,""):
+            raw_maker=row.get("makerU") or row.get("makerUSDC") or row.get("maker")
+        if raw_taker in (None,""):
+            raise RuntimeError(f"OKX_TAKER_FEE_UNAVAILABLE:{asset}:{row}")
+
+        value={
+            "source":"OKX_ACCOUNT_TRADE_FEE",
+            "level":row.get("level"),
+            "group_id":(selected or {}).get("groupId") or group_id or None,
+            "taker_rate":float(raw_taker),
+            "maker_rate":float(raw_maker) if raw_maker not in (None,"") else None,
+            "taker_pct":abs(float(raw_taker))*100.0,
+            "maker_pct":abs(float(raw_maker))*100.0 if raw_maker not in (None,"") else None,
+            "exchange_ts":row.get("ts"),
+        }
+        _FEE_CACHE[asset]={"cached_at":time.time(),"value":value}
+        return dict(value)
 
     def executable_quote(self, asset, action):
         """Return the actual top-of-book touch used for immediate execution.

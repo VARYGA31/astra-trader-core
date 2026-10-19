@@ -14,8 +14,15 @@ def _ts(x):
 
 def status(strategy_mode="NORMAL"):
     mode=str(strategy_mode or "NORMAL").upper()
-    limit=config.SCALP_LOSS_STREAK_LIMIT if mode=="SCALP" else config.LOSS_STREAK_LIMIT
-    pause_seconds=config.SCALP_LOSS_STREAK_PAUSE_SECONDS if mode=="SCALP" else config.LOSS_STREAK_PAUSE_SECONDS
+    if mode=="MICRO":
+        limit=config.MICRO_LOSS_STREAK_LIMIT
+        pause_seconds=config.MICRO_LOSS_STREAK_PAUSE_SECONDS
+    elif mode=="SCALP":
+        limit=config.SCALP_LOSS_STREAK_LIMIT
+        pause_seconds=config.SCALP_LOSS_STREAK_PAUSE_SECONDS
+    else:
+        limit=config.LOSS_STREAK_LIMIT
+        pause_seconds=config.LOSS_STREAK_PAUSE_SECONDS
     if limit <= 0:
         return {"active":False,"reason":"DISABLED","strategy_mode":mode}
 
