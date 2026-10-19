@@ -131,7 +131,19 @@ class OKXDemoAdapter:
             return dict(cached["value"])
 
         info=self.instrument(asset)
-        group_id=str(info.get("groupId") or "").strip()
+        group_id=""
+        # Current OKX API exposes the account-specific fee group through the
+        # authenticated account/instruments endpoint. Fall back to public
+        # metadata/instFamily only if that lookup is unavailable.
+        try:
+            rows=self.private_get("/api/v5/account/instruments",{"instType":"SWAP"}).get("data",[])
+            target=self.inst_id(asset)
+            acc=next((x for x in rows if str(x.get("instId") or "")==target),None)
+            group_id=str((acc or {}).get("groupId") or "").strip()
+        except Exception:
+            group_id=""
+        if not group_id:
+            group_id=str(info.get("groupId") or "").strip()
         params={"instType":"SWAP"}
         if group_id:
             params["groupId"]=group_id
