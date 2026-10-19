@@ -13,6 +13,9 @@ import trade_cycle
 import adaptive_trainer
 import strategy_tournament
 
+ORDER_CAPABILITY=False
+MODEL_CALL_CAPABILITY=False
+
 STATE={
     "status":"STARTING",
     "last_error":None,
@@ -46,7 +49,7 @@ def run_once():
             "best":tournament.get("best"),
             "champions":len(tournament.get("champions") or []),
         },
-        "order_capability":False,
+        "order_capability":ORDER_CAPABILITY,
         "model_calls":0,
     }
     STATE.update({
