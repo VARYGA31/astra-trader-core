@@ -314,6 +314,52 @@ def okx_reference_market(inst):
         "last_candle_close_time_ms":rows[-1]["close_time_ms"],
     }
 
+def okx_microstructure_rest(inst):
+    """Same-venue MICRO fallback when the WebSocket cache is not ready."""
+    depth,_=get(OKX+"/api/v5/market/books",{"instId":inst,"sz":"20"})
+    book=(depth.get("data") or [{}])[0]
+    bids=book.get("bids") or []
+    asks=book.get("asks") or []
+    def notion(xs):
+        total=0.0
+        for x in xs[:20]:
+            try: total+=float(x[0])*float(x[1])
+            except Exception: pass
+        return total
+    b=notion(bids); a=notion(asks)
+    bid=float(bids[0][0]) if bids else None
+    ask=float(asks[0][0]) if asks else None
+    imbalance=(b-a)/(b+a) if b+a else None
+
+    trades,_=get(OKX+"/api/v5/market/trades",{"instId":inst,"limit":"500"})
+    buy=sell=0.0
+    for t in trades.get("data",[]):
+        try:
+            w=float(t.get("px") or 0)*float(t.get("sz") or 0)
+            if str(t.get("side") or "").lower()=="buy": buy+=w
+            else: sell+=w
+        except Exception:
+            continue
+    mid=((bid+ask)/2.0) if bid and ask else None
+    return {
+        "status":"OK",
+        "source":"OKX_REST_BOOKS20_TRADES",
+        "order_book":{
+            "bid_notional_top20":b,
+            "ask_notional_top20":a,
+            "imbalance":imbalance,
+            "bid":bid,
+            "ask":ask,
+        },
+        "trade_flow":{
+            "aggressive_buy_weight":buy,
+            "aggressive_sell_weight":sell,
+            "buy_sell_ratio":(buy/sell) if sell else (None if buy<=0 else 99.0),
+        },
+        "bid":bid,"ask":ask,
+        "spread_pct":((ask-bid)/mid*100.0) if mid and ask>=bid else None,
+    }
+
 def okx_swap(inst):
     out={}
     # Tradable perpetual reference used by ASTRA and the execution layer.
@@ -381,6 +427,30 @@ def snapshot(asset, include_micro=False):
                     spot={"price":okx_spot_price(cfg["okx_spot"])}
             except Exception as e2:
                 errors.append("okx_spot:"+str(e2))
+
+    # MICRO decisions use OKX-native order book/trade flow, because execution
+    # also happens on the OKX swap. Binance remains only the broad spot context.
+    if include_micro and asset in set(config.MICRO_ALLOWED_ASSETS) and spot:
+        micro=None
+        try:
+            import micro_market_stream
+            micro_market_stream.ensure_started()
+            micro=micro_market_stream.snapshot(asset)
+        except Exception as e:
+            errors.append("micro_ws:"+str(e))
+        if not micro or micro.get("status")!="OK":
+            try:
+                micro=okx_microstructure_rest(cfg["okx_swap"])
+            except Exception as e:
+                errors.append("micro_rest:"+str(e))
+                micro=None
+        if micro and micro.get("status")=="OK":
+            spot=dict(spot)
+            spot["order_book"]=micro.get("order_book") or {}
+            spot["trade_flow"]=micro.get("trade_flow") or {}
+            spot["microstructure_source"]=micro.get("source")
+            spot["microstructure_age_seconds"]=micro.get("age_seconds")
+            spot["microstructure_spread_pct"]=micro.get("spread_pct")
 
     perp=okx_swap(cfg["okx_swap"])
     mtf=okx_multi_timeframe(cfg["okx_swap"],include_micro=include_micro)
