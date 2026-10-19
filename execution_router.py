@@ -84,6 +84,18 @@ def open_trade(decision, risk):
     quality_guard=None
     pre_order_reference=None
     pre_order_quote=None
+    micro_fee_info=None
+    if strategy_mode=="MICRO":
+        try:
+            micro_fee_info=adapter.fee_rates(asset)
+        except Exception as e:
+            # Fee lookup failure must not make the system optimistic. Use the
+            # configured conservative fallback and expose the failure in stats.
+            micro_fee_info={
+                "source":"CONFIG_FALLBACK",
+                "taker_pct":float(config.MICRO_FALLBACK_TAKER_FEE_PCT_PER_SIDE),
+                "error":str(e),
+            }
     max_attempts=max(1,min(3,int(config.OKX_ENTRY_FOK_MAX_ATTEMPTS)))
 
     for attempt_no in range(1,max_attempts+1):
@@ -113,6 +125,31 @@ def open_trade(decision, risk):
                 "pre_order_quote":pre_order_quote,
                 "entry_attempts":attempts,
             }
+
+        if strategy_mode=="MICRO":
+            micro_edge=execution_quality.micro_net_edge(
+                entry=pre_order_reference,
+                stop=risk["stop_loss"],
+                tp1=risk["take_profit_1"],
+                tp2=risk["take_profit_2"],
+                taker_fee_pct_per_side=micro_fee_info.get("taker_pct"),
+                slippage_pct_per_side=config.MICRO_ESTIMATED_SLIPPAGE_PCT_PER_SIDE,
+            )
+            quality_guard["micro_net_edge"]=micro_edge
+            quality_guard["micro_fee_info"]=micro_fee_info
+            if not micro_edge.get("passed"):
+                return {
+                    "status":"REJECTED",
+                    "reason":"MICRO_NET_EDGE_TOO_LOW",
+                    "stage":"net_edge",
+                    "execution_quality":quality_guard,
+                    "micro_net_edge":micro_edge,
+                    "planned_entry":decision.get("planned_entry"),
+                    "risk_engine_entry":risk.get("entry"),
+                    "pre_order_reference":pre_order_reference,
+                    "pre_order_quote":pre_order_quote,
+                    "entry_attempts":attempts,
+                }
 
         # The FOK price is the WORST fill we permit. It combines:
         # 1) max adverse slippage and 2) minimum R:R after fill.
@@ -181,6 +218,20 @@ def open_trade(decision, risk):
         mode=mtf_mode,
         scalp_tier=scalp_tier,
     )
+    if strategy_mode=="MICRO":
+        post_edge=execution_quality.micro_net_edge(
+            entry=entry,
+            stop=risk["stop_loss"],
+            tp1=risk["take_profit_1"],
+            tp2=risk["take_profit_2"],
+            taker_fee_pct_per_side=micro_fee_info.get("taker_pct"),
+            slippage_pct_per_side=config.MICRO_ESTIMATED_SLIPPAGE_PCT_PER_SIDE,
+        )
+        post_fill["micro_net_edge"]=post_edge
+        post_fill["micro_fee_info"]=micro_fee_info
+        if not post_edge.get("passed"):
+            post_fill["passed"]=False
+            post_fill["reason"]="POST_FILL_NET_EDGE_TOO_LOW"
 
     # This should be mathematically unreachable with a correctly respected FOK
     # limit, but retain a failsafe in case of exchange/API edge cases.
@@ -261,6 +312,8 @@ def open_trade(decision, risk):
         "minimum_tp1_r_at_fill":min_tp1_r,
         "minimum_tp2_r_at_fill":min_tp2_r,
         "execution_quality":post_fill,
+        "micro_fee_info":micro_fee_info if strategy_mode=="MICRO" else None,
+        "micro_net_edge":post_fill.get("micro_net_edge") if strategy_mode=="MICRO" else None,
         "order_id":opened["order_id"],
         "opened_at_utc":datetime.now(timezone.utc).isoformat(),
         "tp1_taken":False,
