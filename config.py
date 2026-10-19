@@ -300,6 +300,16 @@ MICRO_LOSS_STREAK_PAUSE_SECONDS = int(os.getenv("MICRO_LOSS_STREAK_PAUSE_SECONDS
 MICRO_STATS_LOG_MAX_MB = float(os.getenv("MICRO_STATS_LOG_MAX_MB", "10"))
 MICRO_STATS_DEFAULT_HOURS = int(os.getenv("MICRO_STATS_DEFAULT_HOURS", "6"))
 
+# MICRO-100 acceptance target. Raw win rate is necessary but not sufficient:
+# the strategy must remain profitable after fees and without outsized drawdown.
+MICRO_SCORECARD_WINDOW = int(os.getenv("MICRO_SCORECARD_WINDOW", "100"))
+MICRO_SCORECARD_CONFIRM_WINDOW = int(os.getenv("MICRO_SCORECARD_CONFIRM_WINDOW", "300"))
+MICRO_TARGET_WIN_RATE_PCT = float(os.getenv("MICRO_TARGET_WIN_RATE_PCT", "80"))
+MICRO_TARGET_PROFIT_FACTOR = float(os.getenv("MICRO_TARGET_PROFIT_FACTOR", "1.50"))
+MICRO_TARGET_EXPECTANCY_R = float(os.getenv("MICRO_TARGET_EXPECTANCY_R", "0.10"))
+MICRO_MAX_SCORECARD_DRAWDOWN_R = float(os.getenv("MICRO_MAX_SCORECARD_DRAWDOWN_R", "8.0"))
+MICRO_SCORECARD_MIN_R_COVERAGE_PCT = float(os.getenv("MICRO_SCORECARD_MIN_R_COVERAGE_PCT", "95"))
+
 # Persistent diagnostics used by /scalp_stats.
 SCALP_STATS_LOG_MAX_MB = float(os.getenv("SCALP_STATS_LOG_MAX_MB", "10"))
 SCALP_STATS_DEFAULT_HOURS = int(os.getenv("SCALP_STATS_DEFAULT_HOURS", "6"))
