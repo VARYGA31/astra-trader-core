@@ -195,7 +195,14 @@ def check_once():
                     opened_ms = None
 
             hist = adapter.wait_position_history(asset, opened_at_ms=opened_ms, timeout=10) or {}
+            # OKX realizedPnl is already NET of trading fee, funding,
+            # liquidation penalty and settled PnL. Keep the components too so
+            # MICRO learning can distinguish signal quality from friction.
             pnl = float(hist.get("realizedPnl") or 0)
+            gross_pnl = float(hist.get("pnl") or 0)
+            fee = float(hist.get("fee") or 0)
+            funding_fee = float(hist.get("fundingFee") or 0)
+            liq_penalty = float(hist.get("liqPenalty") or 0)
             exit_px = float(hist.get("closeAvgPx") or 0) if hist.get("closeAvgPx") else None
             reason = _classify_close(exit_px, rec)
 
@@ -203,6 +210,10 @@ def check_once():
                 **rec,
                 "exit_price":exit_px,
                 "pnl_usd":pnl,
+                "gross_pnl_usd":gross_pnl,
+                "fee_usd":fee,
+                "funding_fee_usd":funding_fee,
+                "liq_penalty_usd":liq_penalty,
                 "reason":reason,
                 "mode":"OKX DEMO",
                 "close_event_id":close_key,
