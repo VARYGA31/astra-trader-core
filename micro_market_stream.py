@@ -149,9 +149,17 @@ def snapshot(asset):
         if not st or not st.get("book"):
             return {"status":"NOT_READY","source":"OKX_WS"}
         now=_now()
-        age=now-max(float(st.get("book_ts") or 0),float(st.get("trade_ts") or 0))
-        if age>float(config.MICRO_WS_STALE_SECONDS):
-            return {"status":"STALE","source":"OKX_WS","age_seconds":age}
+        book_age=now-float(st.get("book_ts") or 0)
+        trade_age=now-float(st.get("trade_ts") or 0)
+        age=max(book_age,trade_age)
+        if (
+            not st.get("book_ts") or not st.get("trade_ts")
+            or age>float(config.MICRO_WS_STALE_SECONDS)
+        ):
+            return {
+                "status":"STALE","source":"OKX_WS","age_seconds":age,
+                "book_age_seconds":book_age,"trade_age_seconds":trade_age,
+            }
 
         cutoff=now-float(config.MICRO_FLOW_WINDOW_SECONDS)
         buy=sell=0.0
