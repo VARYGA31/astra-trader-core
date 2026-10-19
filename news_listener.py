@@ -16,9 +16,15 @@ def save_seen(s):
     STATE.parent.mkdir(parents=True,exist_ok=True)
     STATE.write_text(json.dumps(list(s)[-10000:]),encoding="utf-8")
 
-def poll_once(hours=2):
+def poll_once(hours=2,assets=None):
+    """Poll only assets relevant to the current trading mode.
+
+    This keeps MICRO from fetching XAU macro/news and lets PAUSED/NORMAL still
+    request the broader set when needed.
+    """
     seen=load_seen();new=[];health={}
-    for asset in config.ALLOWED_ASSETS:
+    selected=tuple(dict.fromkeys(str(a).upper() for a in (assets or config.ALLOWED_ASSETS)))
+    for asset in selected:
         s=news_snapshot.snapshot(asset,hours);health[asset]=s.get("summary",{})
         news_cache.put(asset,s)
         for e in s.get("events",[]):
@@ -27,6 +33,7 @@ def poll_once(hours=2):
                 seen.add(k);new.append(e)
     save_seen(seen)
     return {"status":"OK","polled_at_utc":datetime.now(timezone.utc).isoformat(),
+            "assets":list(selected),
             "new_events":new,"high_impact_new":[e for e in new if e.get("impact_hint")=="HIGH"],"health":health}
 
 if __name__=="__main__":
