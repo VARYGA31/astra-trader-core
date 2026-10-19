@@ -4,8 +4,8 @@ from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from datetime import datetime,timezone
 
 import config,news_listener,position_monitor,trade_cycle,paper_execution,execution_router,decision_gate,observability
-import strategy_mode,scalp_decision_gate,micro_decision_gate,telegram_control,scalp_stats,micro_stats,micro_market_stream
-import adaptive_engine,adaptive_memory,adaptive_cost,adaptive_stats,adaptive_trainer,multi_market_trainer,strategy_tournament
+import strategy_mode,micro_decision_gate,telegram_control,micro_stats,micro_market_stream,crypto_shadow_lab
+import adaptive_memory,adaptive_cost,adaptive_trainer,multi_market_trainer,strategy_tournament
 import position_exit_guard
 from astra_client import decide
 
@@ -34,9 +34,9 @@ R={
     "performance":{},
     "strategy_mode":strategy_mode.status(),
     "telegram_control":telegram_control.STATE,
-    "scalp_stats_6h":scalp_stats.summary(6),
     "micro_stats_6h":micro_stats.summary(6),
     "micro_stream":micro_market_stream.health(),
+    "crypto_shadow_lab":dict(crypto_shadow_lab.STATE),
     "adaptive_brain":adaptive_memory.load_brain(),
     "adaptive_learning_7d":adaptive_memory.summary(168),
     "adaptive_cost_today":adaptive_cost.usage_today(),
@@ -44,6 +44,7 @@ R={
     "multi_market_trainer_7d":multi_market_trainer.summary(168) if config.MULTI_MARKET_TRAINER_V3_ENABLED else {"status":"DISABLED"},
     "strategy_tournament_7d":strategy_tournament.summary(168) if config.STRATEGY_TOURNAMENT_V5_ENABLED else {"status":"DISABLED"},
 }
+
 def now():return datetime.now(timezone.utc)
 
 def refresh_observability():
@@ -56,15 +57,14 @@ def refresh_observability():
         R["skip_reasons"]=o.get("skip_reasons",{})
         started=o.get("started_at_utc")
         R["performance"]=observability.trade_performance(started)
-        R["scalp_stats_6h"]=scalp_stats.summary(6)
         R["micro_stats_6h"]=micro_stats.summary(6)
         R["micro_stream"]=micro_market_stream.health()
+        R["crypto_shadow_lab"]=dict(crypto_shadow_lab.STATE)
         R["decision_engine_enabled"]=bool(config.AUTO_DECISION)
         R["trade_execution_enabled"]=bool(config.AUTO_PAPER_EXECUTION)
         R["adaptive_brain"]=adaptive_memory.load_brain()
         R["adaptive_learning_7d"]=adaptive_memory.summary(168)
         R["adaptive_cost_today"]=adaptive_cost.usage_today()
-        R["adaptive_auto_stats_24h"]=adaptive_stats.summary(24)
         R["adaptive_trainer_7d"]=adaptive_trainer.summary(168)
         R["multi_market_trainer_7d"]=multi_market_trainer.summary(168) if config.MULTI_MARKET_TRAINER_V3_ENABLED else {"status":"DISABLED"}
         R["strategy_tournament_7d"]=strategy_tournament.summary(168) if config.STRATEGY_TOURNAMENT_V5_ENABLED else {"status":"DISABLED"}
@@ -89,6 +89,7 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Type","application/json")
         self.send_header("Content-Length",str(len(b)))
         self.end_headers();self.wfile.write(b)
+
     def log_message(self,*args):return
 
 def check_positions():
@@ -101,17 +102,19 @@ def main():
     ).start()
     if config.TELEGRAM_CONTROL_ENABLED:
         threading.Thread(target=telegram_control.run_forever,daemon=True).start()
+    if config.CRYPTO_SHADOW_LAB_ENABLED:
+        threading.Thread(target=crypto_shadow_lab.run_forever,daemon=True).start()
     if config.MULTI_MARKET_TRAINER_V3_ENABLED:
         threading.Thread(target=multi_market_trainer.run_forever,daemon=True).start()
 
     paper_execution.init_state(config.INITIAL_EQUITY,False)
     R["status"]="ok"
     refresh_observability()
+
     last_news=0
     last_pos=0
     last_exit=0
     last_decision={a:0 for a in config.ALLOWED_ASSETS}
-    last_auto_decision=0
     last_mode=None
 
     while True:
@@ -123,8 +126,10 @@ def main():
                 last_mode=mode
                 if mode=="MICRO":
                     micro_market_stream.ensure_started()
+
             R["strategy_mode"]=strategy_mode.status()
             R["telegram_control"]=dict(telegram_control.STATE)
+            R["crypto_shadow_lab"]=dict(crypto_shadow_lab.STATE)
             high=set()
 
             if t-last_news>=config.NEWS_POLL_SECONDS:
@@ -166,107 +171,40 @@ def main():
                         R["emergency_exits"]+=1
                 last_exit=t
 
+            # Only two tradable strategies exist now: NORMAL and MICRO.
             if config.AUTO_DECISION and mode!="PAUSED":
-                if mode=="AUTO":
-                    force_auto=any(a in high for a in config.ADAPTIVE_ALLOWED_ASSETS)
-                    if t-last_auto_decision>=config.ADAPTIVE_DECISION_INTERVAL_SECONDS or force_auto:
-                        # Throttle before the model call so a transient API/JSON
-                        # failure cannot trigger a retry storm every worker tick.
-                        last_auto_decision=t
-                        ar=adaptive_engine.run_once(force=force_auto)
-                        adaptive_stats.record(ar)
-                        R["last_adaptive_cycle"]={
-                            "at_utc":now().isoformat(),
-                            "status":ar.get("status"),
-                            "reason":ar.get("reason"),
-                            "result":ar.get("result"),
-                            "execution":ar.get("execution"),
-                            "learning":ar.get("learning"),
-                            "trainer":{
-                                "best":(ar.get("trainer") or {}).get("best"),
-                                "summary":(ar.get("trainer") or {}).get("summary"),
-                                "recorded":(ar.get("trainer") or {}).get("recorded"),
-                                "evaluated":(ar.get("trainer") or {}).get("evaluated"),
-                            } if ar.get("trainer") else None,
-                            "tournament":{
-                                "best":(ar.get("tournament") or {}).get("best"),
-                                "summary":(ar.get("tournament") or {}).get("summary"),
-                                "champions":len((ar.get("tournament") or {}).get("champions") or []),
-                                "recorded":(ar.get("tournament") or {}).get("recorded"),
-                                "evaluated":(ar.get("tournament") or {}).get("evaluated"),
-                            } if ar.get("tournament") else None,
-                        }
-                        if ar.get("status")=="OK":
-                            R["model_calls"]+=1
-                            d=ar.get("decision") or {}
-                            x=ar.get("execution") or {"status":"NO_TRADE","reason":"ADAPTIVE_WAIT"}
-                            best=(ar.get("result") or {}).get("best_opportunity") or {}
-                            a=str(best.get("asset") or d.get("asset") or "MULTI").upper()
-                            R["last_decisions"]["AUTO"]={
-                                "at_utc":now().isoformat(),
-                                "strategy_mode":"AUTO",
-                                "decision":d,
-                                "execution":x,
-                                "brain":ar.get("result"),
-                            }
-                            p=(ar.get("packages") or {}).get(a)
-                            if p:
-                                gate={
-                                    "call_model":True,
-                                    "reason":"ADAPTIVE_MULTI_ASSET",
-                                    "allowed_direction":best.get("action") if best.get("action") in {"LONG","SHORT"} else None,
-                                    "mtf_quality":best.get("setup_quality"),
-                                    "mtf_mode":best.get("strategy"),
-                                    "mtf":{
-                                        "passed":best.get("action") in {"LONG","SHORT"},
-                                        "direction":best.get("action"),
-                                        "mode":best.get("strategy"),
-                                        "quality":best.get("setup_quality"),
-                                        "minimum_quality":(
-                                            config.ADAPTIVE_MIN_SCALP_QUALITY
-                                            if best.get("strategy")=="SCALP"
-                                            else config.ADAPTIVE_MIN_NORMAL_QUALITY
-                                        ),
-                                    },
-                                }
-                                observability.record_decision(p,gate,d,x,model_called=True)
-                        else:
+                assets=config.MICRO_ALLOWED_ASSETS if mode=="MICRO" else config.ALLOWED_ASSETS
+                interval=config.MICRO_DECISION_INTERVAL_SECONDS if mode=="MICRO" else config.DECISION_INTERVAL_SECONDS
+                gate_module=micro_decision_gate if mode=="MICRO" else decision_gate
+
+                for a in assets:
+                    if t-last_decision.get(a,0)>=interval or a in high:
+                        p=trade_cycle.prepare(a,12,mode)
+                        gate=gate_module.evaluate(p,force_event=a in high)
+
+                        if not gate["call_model"]:
+                            d={"asset":a,"action":"WAIT","reason":gate["reason"],"gate":gate,"strategy_mode":mode}
+                            x={"status":"NO_TRADE","reason":gate["reason"]}
                             R["model_skips"]+=1
+                        else:
+                            p["model_gate"]=gate
+                            d=decide(p)
+                            d["gate"]=gate
+                            d["strategy_mode"]=mode
+                            R["model_calls"]+=1
+                            x=trade_cycle.execute(d) if config.AUTO_PAPER_EXECUTION else {"status":"DECISION_ONLY"}
+
+                        R["last_decisions"][a]={
+                            "at_utc":now().isoformat(),
+                            "strategy_mode":mode,
+                            "decision":d,
+                            "execution":x,
+                        }
+                        observability.record_decision(p,gate,d,x,model_called=bool(gate.get("call_model")))
+                        if mode=="MICRO":
+                            micro_stats.record(p,gate,d,x,model_called=bool(gate.get("call_model")))
                         refresh_observability()
-                else:
-                    assets=config.MICRO_ALLOWED_ASSETS if mode=="MICRO" else config.SCALP_ALLOWED_ASSETS if mode=="SCALP" else config.ALLOWED_ASSETS
-                    interval=config.MICRO_DECISION_INTERVAL_SECONDS if mode=="MICRO" else config.SCALP_DECISION_INTERVAL_SECONDS if mode=="SCALP" else config.DECISION_INTERVAL_SECONDS
-                    gate_module=micro_decision_gate if mode=="MICRO" else scalp_decision_gate if mode=="SCALP" else decision_gate
-                    for a in assets:
-                        if t-last_decision.get(a,0)>=interval or a in high:
-                            p=trade_cycle.prepare(a,12,mode)
-                            gate=gate_module.evaluate(p,force_event=a in high)
-
-                            if not gate["call_model"]:
-                                d={"asset":a,"action":"WAIT","reason":gate["reason"],"gate":gate,"strategy_mode":mode}
-                                x={"status":"NO_TRADE","reason":gate["reason"]}
-                                R["model_skips"]+=1
-                            else:
-                                p["model_gate"]=gate
-                                d=decide(p)
-                                d["gate"]=gate
-                                d["strategy_mode"]=mode
-                                R["model_calls"]+=1
-                                x=trade_cycle.execute(d) if config.AUTO_PAPER_EXECUTION else {"status":"DECISION_ONLY"}
-
-                            R["last_decisions"][a]={
-                                "at_utc":now().isoformat(),
-                                "strategy_mode":mode,
-                                "decision":d,
-                                "execution":x,
-                            }
-                            observability.record_decision(p,gate,d,x,model_called=bool(gate.get("call_model")))
-                            if mode=="SCALP":
-                                scalp_stats.record(p,gate,d,x,model_called=bool(gate.get("call_model")))
-                            elif mode=="MICRO":
-                                micro_stats.record(p,gate,d,x,model_called=bool(gate.get("call_model")))
-                            refresh_observability()
-                            last_decision[a]=t
+                        last_decision[a]=t
 
             R["status"]="ok"
             R["last_error"]=None

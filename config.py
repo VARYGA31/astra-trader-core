@@ -377,6 +377,11 @@ ADAPTIVE_TRAINER_R_TO_QUALITY_MULT = float(os.getenv("ADAPTIVE_TRAINER_R_TO_QUAL
 ADAPTIVE_TRAINER_LOG_MAX_MB = float(os.getenv("ADAPTIVE_TRAINER_LOG_MAX_MB", "30"))
 ADAPTIVE_TRAINER_CANDIDATES_TO_MODEL = int(os.getenv("ADAPTIVE_TRAINER_CANDIDATES_TO_MODEL", "3"))
 
+# Crypto Trainer/Tournament now run only as a shadow laboratory. They may
+# generate/evaluate hypothetical candidates but never call ASTRA or submit orders.
+CRYPTO_SHADOW_LAB_ENABLED = os.getenv("CRYPTO_SHADOW_LAB_ENABLED", "true").lower() == "true"
+CRYPTO_SHADOW_LAB_INTERVAL_SECONDS = int(os.getenv("CRYPTO_SHADOW_LAB_INTERVAL_SECONDS", "300"))
+
 
 # ===== ASTRA MULTI-MARKET TRAINER v3 =====
 # Gold + DeFi run as shadow-only laboratories. They never place orders.

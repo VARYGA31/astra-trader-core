@@ -99,7 +99,7 @@ main=[x["text"] for row in telegram_control.keyboard("MAIN")["keyboard"] for x i
 modes=[x["text"] for row in telegram_control.keyboard("MODES")["keyboard"] for x in row]
 assert "🎛 РЕЖИМЫ" in main,main
 assert "🟦 NORMAL" not in main,main
-assert "🟦 NORMAL" in modes and "🧠 AUTO" in modes,modes
+assert "🟦 NORMAL" in modes and "🔥 MICRO" in modes and "🧠 AUTO" not in modes,modes
 
 print(json.dumps({
     "status":"OK",
