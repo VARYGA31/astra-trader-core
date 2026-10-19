@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from datetime import datetime,timezone
 
 import config,news_listener,position_monitor,trade_cycle,paper_execution,execution_router,decision_gate,observability
-import strategy_mode,scalp_decision_gate,telegram_control,scalp_stats
+import strategy_mode,scalp_decision_gate,micro_decision_gate,telegram_control,scalp_stats
 import adaptive_engine,adaptive_memory,adaptive_cost,adaptive_stats,adaptive_trainer,multi_market_trainer,strategy_tournament
 import position_exit_guard
 from astra_client import decide
@@ -224,9 +224,9 @@ def main():
                             R["model_skips"]+=1
                         refresh_observability()
                 else:
-                    assets=config.SCALP_ALLOWED_ASSETS if mode=="SCALP" else config.ALLOWED_ASSETS
-                    interval=config.SCALP_DECISION_INTERVAL_SECONDS if mode=="SCALP" else config.DECISION_INTERVAL_SECONDS
-                    gate_module=scalp_decision_gate if mode=="SCALP" else decision_gate
+                    assets=config.MICRO_ALLOWED_ASSETS if mode=="MICRO" else config.SCALP_ALLOWED_ASSETS if mode=="SCALP" else config.ALLOWED_ASSETS
+                    interval=config.MICRO_DECISION_INTERVAL_SECONDS if mode=="MICRO" else config.SCALP_DECISION_INTERVAL_SECONDS if mode=="SCALP" else config.DECISION_INTERVAL_SECONDS
+                    gate_module=micro_decision_gate if mode=="MICRO" else scalp_decision_gate if mode=="SCALP" else decision_gate
                     for a in assets:
                         if t-last_decision.get(a,0)>=interval or a in high:
                             p=trade_cycle.prepare(a,12,mode)
