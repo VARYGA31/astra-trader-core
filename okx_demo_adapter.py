@@ -106,12 +106,46 @@ class OKXDemoAdapter:
             raise RuntimeError(f"OKX_INSTRUMENT_NOT_LIVE:{inst}:{x.get('state')}")
         return x
 
-    def ticker(self, asset):
+    def ticker_row(self, asset):
         inst = self.inst_id(asset)
         data = self.public_get("/api/v5/market/ticker", {"instId":inst}).get("data", [])
         if not data:
             raise RuntimeError(f"OKX_TICKER_EMPTY:{inst}")
-        return float(data[0]["last"])
+        return data[0]
+
+    def ticker(self, asset):
+        return float(self.ticker_row(asset)["last"])
+
+    def executable_quote(self, asset, action):
+        """Return the actual top-of-book touch used for immediate execution.
+
+        LONG must cross the ask; SHORT must cross the bid. Falling back to last
+        is intentionally forbidden because a non-marketable FOK can repeatedly
+        cancel even when the signal itself is valid.
+        """
+        row=self.ticker_row(asset)
+        last=float(row.get("last") or 0)
+        bid=float(row.get("bidPx") or 0)
+        ask=float(row.get("askPx") or 0)
+        if last<=0 or bid<=0 or ask<=0 or ask<bid:
+            raise RuntimeError(f"OKX_BAD_EXECUTABLE_QUOTE:{asset}:{row}")
+        action=str(action or "").upper()
+        if action=="LONG":
+            reference=ask
+        elif action=="SHORT":
+            reference=bid
+        else:
+            raise RuntimeError("INVALID_ACTION")
+        mid=(bid+ask)/2.0
+        return {
+            "last":last,
+            "bid":bid,
+            "ask":ask,
+            "mid":mid,
+            "spread_pct":((ask-bid)/mid*100.0) if mid else None,
+            "reference":reference,
+            "reference_side":"ASK" if action=="LONG" else "BID",
+        }
 
     @staticmethod
     def _floor_step(value, step):
