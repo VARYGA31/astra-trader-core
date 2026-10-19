@@ -165,7 +165,9 @@ def main():
 
     while True:
         t=time.time()
+        stage="loop_start"
         try:
+            stage="strategy_mode"
             mode=strategy_mode.get_mode()
             if mode!=last_mode:
                 last_decision={a:0 for a in config.ALLOWED_ASSETS}
@@ -179,6 +181,7 @@ def main():
             high=set()
 
             if t-last_news>=config.NEWS_POLL_SECONDS:
+                stage="news_poll"
                 news_assets=config.MICRO_ALLOWED_ASSETS if mode=="MICRO" else config.ALLOWED_ASSETS
                 n=news_listener.poll_once(2,news_assets)
                 R["last_news"]=n
@@ -202,6 +205,7 @@ def main():
                     R["last_news_exit_reviews"]=reviews[-10:]
 
             if t-last_pos>=config.POSITION_POLL_SECONDS:
+                stage="position_sync"
                 R["last_position_check"]=check_positions()
                 if mode=="MICRO":
                     micro_second_shadow.evaluate_pending()
@@ -228,7 +232,9 @@ def main():
 
                 for a in assets:
                     if t-last_decision.get(a,0)>=interval or a in high:
+                        stage=f"decision_prepare:{a}"
                         p=trade_cycle.prepare(a,12,mode)
+                        stage=f"decision_gate:{a}"
                         gate=gate_module.evaluate(p,force_event=a in high)
 
                         if not gate["call_model"]:
@@ -237,10 +243,12 @@ def main():
                             R["model_skips"]+=1
                         else:
                             p["model_gate"]=gate
+                            stage=f"model_decide:{a}"
                             d=decide(p)
                             d["gate"]=gate
                             d["strategy_mode"]=mode
                             R["model_calls"]+=1
+                            stage=f"execution_or_shadow:{a}"
                             if mode=="MICRO" and gate.get("second_position_shadow"):
                                 # Explicitly bypass execution: this experiment only
                                 # measures whether a second position would add NET edge.
@@ -254,8 +262,10 @@ def main():
                             "decision":d,
                             "execution":x,
                         }
+                        stage=f"observability:{a}"
                         observability.record_decision(p,gate,d,x,model_called=bool(gate.get("call_model")))
                         if mode=="MICRO":
+                            stage=f"micro_stats:{a}"
                             micro_stats.record(p,gate,d,x,model_called=bool(gate.get("call_model")))
                         refresh_observability()
                         last_decision[a]=t
@@ -266,9 +276,18 @@ def main():
                 _heartbeat(mode)
                 last_heartbeat=t
 
-        except Exception:
+        except Exception as e:
             R["status"]="degraded"
             R["last_error"]=traceback.format_exc()[-5000:]
+            # Secret-free runtime diagnostic. Do not print request headers,
+            # credentials or full decision payloads.
+            print(json.dumps({
+                "event":"ASTRA_WORKER_EXCEPTION",
+                "at_utc":now().isoformat(),
+                "stage":stage,
+                "error_type":type(e).__name__,
+                "error":str(e)[:1200],
+            },ensure_ascii=False,separators=(",",":")),flush=True)
 
         time.sleep(config.WORKER_TICK_SECONDS)
 
