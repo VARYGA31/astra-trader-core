@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Authorized Telegram control for ASTRA strategy mode.
+"""Authorized Telegram control for ASTRA trading modes.
 
-The controller never places orders itself. It only changes the persisted active
-mode. Switching NORMAL <-> SCALP is refused while an OKX position is open.
-PAUSED is always allowed and stops only new entries.
+Only NORMAL and MICRO are tradable. PAUSED blocks new entries while protection
+for open positions remains active. Trainer/Tournament stay available as
+shadow-only learning tools and cannot place orders.
 """
 import json,time
 from pathlib import Path
 import requests
-import config,strategy_mode,telegram_notifier,demo_ledger,scalp_stats,micro_stats,adaptive_memory,adaptive_cost,adaptive_stats,adaptive_trainer,multi_market_trainer,strategy_tournament
+
+import config,strategy_mode,telegram_notifier,demo_ledger,micro_stats
+import adaptive_memory,adaptive_cost,adaptive_trainer,multi_market_trainer,strategy_tournament
+import crypto_shadow_lab
 from okx_demo_adapter import OKXDemoAdapter
 
 API="https://api.telegram.org"
@@ -19,14 +22,13 @@ def keyboard(section="MAIN"):
     section=str(section or "MAIN").upper()
     if section=="MODES":
         rows=[
-            [{"text":"🟦 NORMAL"},{"text":"⚡ SCALP"},{"text":"🔥 MICRO"}],
-            [{"text":"🧠 AUTO"},{"text":"⏸ PAUSE"}],
+            [{"text":"🟦 NORMAL"},{"text":"🔥 MICRO"}],
+            [{"text":"⏸ PAUSE"}],
             [{"text":"⬅️ ГЛАВНАЯ"}],
         ]
     elif section=="MONITOR":
         rows=[
             [{"text":"📊 STATUS"},{"text":"💰 COST"}],
-            [{"text":"📊 AUTO STATS"},{"text":"📈 SCALP STATS"}],
             [{"text":"🔥 MICRO STATS"}],
             [{"text":"⬅️ ГЛАВНАЯ"}],
         ]
@@ -34,7 +36,7 @@ def keyboard(section="MAIN"):
         rows=[
             [{"text":"🏆 TOURNAMENT"},{"text":"🧪 CRYPTO TRAINER"}],
             [{"text":"🧠 BRAIN"},{"text":"🎓 LEARNING"}],
-            [{"text":"🌐 LAB OVERVIEW"}],
+            [{"text":"🔬 SHADOW LAB"}],
             [{"text":"⬅️ ГЛАВНАЯ"}],
         ]
     elif section=="MARKETS":
@@ -49,19 +51,13 @@ def keyboard(section="MAIN"):
             [{"text":"🧪 ОБУЧЕНИЕ"},{"text":"🌐 РЫНКИ"}],
             [{"text":"⏸ PAUSE"},{"text":"📊 STATUS"}],
         ]
-    return {
-        "keyboard":rows,
-        "resize_keyboard":True,
-        "is_persistent":True,
-    }
+    return {"keyboard":rows,"resize_keyboard":True,"is_persistent":True}
 
 def parse_mode_command(text):
     t=str(text or "").strip().upper()
     mapping={
         "/NORMAL":"NORMAL","/MODE_NORMAL":"NORMAL","🟦 NORMAL":"NORMAL","NORMAL":"NORMAL",
-        "/SCALP":"SCALP","/MODE_SCALP":"SCALP","⚡ SCALP":"SCALP","SCALP":"SCALP",
         "/MICRO":"MICRO","/MODE_MICRO":"MICRO","🔥 MICRO":"MICRO","MICRO":"MICRO",
-        "/AUTO":"AUTO","/MODE_AUTO":"AUTO","🧠 AUTO":"AUTO","AUTO":"AUTO",
         "/PAUSE":"PAUSED","⏸ PAUSE":"PAUSED","PAUSE":"PAUSED","PAUSED":"PAUSED",
     }
     return mapping.get(t)
@@ -77,7 +73,8 @@ def _summary():
     except Exception: ledger={}
     brain="ON" if config.AUTO_DECISION else "OFF"
     execute="ON" if config.AUTO_PAPER_EXECUTION else "OFF"
-    icon="🔥" if mode=="MICRO" else "⚡" if mode=="SCALP" else "🟦" if mode=="NORMAL" else "🧠" if mode=="AUTO" else "⏸"
+    icon="🔥" if mode=="MICRO" else "🟦" if mode=="NORMAL" else "⏸"
+    shadow=str(crypto_shadow_lab.STATE.get("status") or "—")
     return (
         f"🎛 <b>ASTRA CONTROL</b>\n\n"
         f"Активный режим: {icon} <b>{mode}</b>\n"
@@ -86,55 +83,41 @@ def _summary():
         f"Execution target: <b>{config.EXECUTION_MODE}</b>\n"
         f"Открытых позиций: <b>{ex.get('open_positions','—')}</b>\n"
         f"Demo equity: <b>${float(ledger.get('equity') or 0):.2f}</b>\n\n"
-        f"🟦 NORMAL: 4H → 1H → 15M\n"
-        f"⚡ SCALP: 1H → 15M → 5M (BTC/ETH/GRAM)\n"
+        f"🟦 NORMAL: обычная ASTRA 4H → 1H → 15M\n"
         f"🔥 MICRO v2: 5M → 3M → 1M, OKX-native flow, NET-edge gate, hard exit ≤ {config.MICRO_MAX_HOLD_SECONDS//60} мин\n"
-        f"🧠 AUTO: Tournament v5.1 — CHAMPION + малорисковый PROBATION по подтверждённой статистике\n"
+        f"🔬 Shadow learning: <b>{shadow}</b> — Trainer/Tournament учатся, но ордера не открывают.\n"
         f"⏸ PAUSE: новые входы выключены, защита открытой позиции продолжает работать."
     )
 
-def _scalp_stats_text(hours=6):
-    s=scalp_stats.summary(hours)
-    b=s.get("blockers",{})
-    tiers=s.get("gate_passes_by_tier",{})
-    acts=s.get("model_actions",{})
-    lines=[
-        f"📈 <b>ASTRA SCALP FUNNEL — {int(float(s.get('hours',hours)))}h</b>",
-        "",
-        f"Проверок: <b>{s.get('checks',0)}</b>",
-        f"Gate PRIME: <b>{tiers.get('PRIME',0)}</b>",
-        f"Gate FAST: <b>{tiers.get('FAST',0)}</b>",
-        f"Astra calls: <b>{s.get('model_calls',0)}</b>",
-        f"Astra LONG/SHORT: <b>{acts.get('LONG',0)+acts.get('SHORT',0)}</b>",
-        f"Astra WAIT: <b>{s.get('model_waits',0)}</b>",
-        f"Открыто сделок: <b>{s.get('opened_trades',0)}</b>",
-        f"FOK без fill: <b>{s.get('fok_not_filled',0)}</b>",
-        "",
-        "<b>Где чаще блокирует:</b>",
-    ]
-    labels=[("1H_REGIME","1H regime"),("15M_SETUP","15M setup"),("5M_TRIGGER","5M trigger"),("5M_VOLUME","5M volume"),("SPREAD","spread"),("VOLATILITY","volatility"),("MICROSTRUCTURE","microstructure"),("CHASE","anti-chase"),("GUARD","news/guard"),("SAME_TRIGGER","same 5m candle"),("QUALITY","quality")]
-    shown=0
-    for key,label in labels:
-        n=int(b.get(key,0) or 0)
-        if n:
-            lines.append(f"• {label}: <b>{n}</b>"); shown+=1
-    if not shown: lines.append("• пока данных недостаточно")
-    return "\n".join(lines)
+def _shadow_text():
+    st=dict(crypto_shadow_lab.STATE)
+    last=st.get("last_result") or {}
+    tr=last.get("trainer") or {}
+    tour=last.get("tournament") or {}
+    return (
+        "🔬 <b>CRYPTO SHADOW LAB</b>\n\n"
+        f"Status: <b>{st.get('status')}</b>\n"
+        f"Last run: <b>{st.get('last_run_at_utc') or '—'}</b>\n"
+        f"Trainer recorded/evaluated: <b>{tr.get('recorded',0)}/{tr.get('evaluated',0)}</b>\n"
+        f"Tournament recorded/evaluated: <b>{tour.get('recorded',0)}/{tour.get('evaluated',0)}</b>\n"
+        f"Champions: <b>{tour.get('champions',0)}</b>\n"
+        f"Model calls: <b>{last.get('model_calls',0)}</b> · Order capability: <b>{last.get('order_capability',False)}</b>"
+    )
 
 def _send(text,section="MAIN"):
     return telegram_notifier.send_text(text,reply_markup=keyboard(section))
 
 def _switch(target,source="TELEGRAM"):
-    # Share one in-process lock with execution. If an order is currently being
-    # submitted, mode switching waits until the result is known; then the open
-    # position guard decides whether switching is safe.
     with strategy_mode.RUNTIME_LOCK:
         current=strategy_mode.get_mode()
         try:
             ex=OKXDemoAdapter().exchange_active_summary()
             open_positions=int(ex.get("open_positions",0))
         except Exception as e:
-            return _send(f"⚠️ Не могу безопасно сменить режим: не удалось проверить позиции OKX.\n<code>{str(e)}</code>","MODES")
+            return _send(
+                f"⚠️ Не могу безопасно сменить режим: не удалось проверить позиции OKX.\n<code>{str(e)}</code>",
+                "MODES"
+            )
         chk=strategy_mode.switch_check(current,target,open_positions)
         if not chk.get("allowed"):
             if chk.get("reason")=="OPEN_POSITION_EXISTS":
@@ -146,8 +129,12 @@ def _switch(target,source="TELEGRAM"):
                 )
             return _send(f"⚠️ Режим не изменён: {chk.get('reason')}","MODES")
         strategy_mode.set_mode(target,changed_by=source)
-        icon="🔥" if target=="MICRO" else "⚡" if target=="SCALP" else "🟦" if target=="NORMAL" else "🧠" if target=="AUTO" else "⏸"
-        return _send(f"{icon} <b>ASTRA {target} ACTIVATED</b>\n\nРежим сохранён в /data и переживёт Redeploy.","MODES")
+        icon="🔥" if target=="MICRO" else "🟦" if target=="NORMAL" else "⏸"
+        return _send(
+            f"{icon} <b>ASTRA {target} ACTIVATED</b>\n\n"
+            "Режим сохранён в /data и переживёт Redeploy.",
+            "MODES"
+        )
 
 def handle_update(update):
     msg=update.get("message") or {}
@@ -155,43 +142,52 @@ def handle_update(update):
     chat_id=chat.get("id")
     if not _authorized(chat_id):
         return {"status":"IGNORED_UNAUTHORIZED"}
+
     text=str(msg.get("text") or "").strip()
-    upper=text.upper()
-    lower=text.lower()
+    upper=text.upper(); lower=text.lower()
     STATE["last_command"]=text
 
     if upper=="⬅️ ГЛАВНАЯ" or lower in {"/menu","/start"}:
         _send(_summary(),"MAIN"); return {"status":"OK","action":"MAIN_MENU"}
 
     if upper=="🎛 РЕЖИМЫ":
-        _send("🎛 <b>РЕЖИМЫ ASTRA</b>\n\nВыбери режим торговли. PAUSE блокирует только новые входы.","MODES")
+        _send(
+            "🎛 <b>ТОРГОВЫЕ РЕЖИМЫ ASTRA</b>\n\n"
+            "Доступны только NORMAL и MICRO. PAUSE блокирует новые входы.",
+            "MODES"
+        )
         return {"status":"OK","action":"MENU_MODES"}
+
     if upper=="📊 МОНИТОРИНГ":
-        _send("📊 <b>МОНИТОРИНГ</b>\n\nСтатус, расходы API и воронка решений.","MONITOR")
+        _send("📊 <b>МОНИТОРИНГ</b>\n\nСтатус, расходы API и MICRO-воронка.","MONITOR")
         return {"status":"OK","action":"MENU_MONITOR"}
+
     if upper=="🧪 ОБУЧЕНИЕ":
-        _send("🧪 <b>ОБУЧЕНИЕ ASTRA</b>\n\nCrypto Trainer, внешняя память и Multi-Market Lab.","LEARNING")
+        _send(
+            "🧪 <b>ОБУЧЕНИЕ ASTRA</b>\n\n"
+            "Trainer/Tournament работают shadow-only и не имеют доступа к ордерам.",
+            "LEARNING"
+        )
         return {"status":"OK","action":"MENU_LEARNING"}
+
     if upper=="🌐 РЫНКИ":
-        _send("🌐 <b>РЫНКИ-ЛАБОРАТОРИИ</b>\n\nGold и DeFi сейчас обучаются только на shadow-сделках.","MARKETS")
+        _send("🌐 <b>РЫНКИ-ЛАБОРАТОРИИ</b>\n\nGold и DeFi остаются shadow-only.","MARKETS")
         return {"status":"OK","action":"MENU_MARKETS"}
 
     if lower in {"/mode","/help"} or upper=="🎛 MODE":
         _send(_summary(),"MAIN"); return {"status":"OK","action":"STATUS"}
     if lower=="/status" or upper=="📊 STATUS":
         _send(_summary(),"MONITOR"); return {"status":"OK","action":"STATUS"}
-    if lower in {"/scalp_stats","/scalpstats"} or upper=="📈 SCALP STATS":
-        _send(_scalp_stats_text(6),"MONITOR"); return {"status":"OK","action":"SCALP_STATS"}
     if lower in {"/micro_stats","/microstats"} or upper=="🔥 MICRO STATS":
         _send(micro_stats.telegram_text(6),"MONITOR"); return {"status":"OK","action":"MICRO_STATS"}
+    if lower in {"/shadow","/shadow_lab"} or upper=="🔬 SHADOW LAB":
+        _send(_shadow_text(),"LEARNING"); return {"status":"OK","action":"SHADOW_LAB"}
     if lower in {"/brain","/astra_brain"} or upper=="🧠 BRAIN":
         _send(adaptive_memory.brain_text(),"LEARNING"); return {"status":"OK","action":"BRAIN"}
     if lower in {"/learning","/learn"} or upper=="🎓 LEARNING":
         _send(adaptive_memory.learning_text(168),"LEARNING"); return {"status":"OK","action":"LEARNING"}
     if lower in {"/cost","/api_cost","/usage"} or upper=="💰 COST":
         _send(adaptive_cost.telegram_text(),"MONITOR"); return {"status":"OK","action":"COST"}
-    if lower in {"/auto_stats","/autostats","/auto_funnel"} or upper=="📊 AUTO STATS":
-        _send(adaptive_stats.telegram_text(24),"MONITOR"); return {"status":"OK","action":"AUTO_STATS"}
     if lower in {"/tournament","/champions","/strategy_tournament"} or upper=="🏆 TOURNAMENT":
         _send(strategy_tournament.telegram_text(168),"LEARNING"); return {"status":"OK","action":"TOURNAMENT"}
     if lower in {"/trainer","/train","/trainer_stats"} or upper in {"🧪 TRAINER","🧪 CRYPTO TRAINER"}:
@@ -203,14 +199,22 @@ def handle_update(update):
     if lower in {"/defi","/defi_lab"} or upper=="🟣 DEFI LAB":
         _send(multi_market_trainer.defi_text(168),"MARKETS"); return {"status":"OK","action":"DEFI_LAB"}
 
+    if lower in {"/scalp","/mode_scalp","/auto","/mode_auto","/auto_stats","/scalp_stats"} or upper in {"SCALP","AUTO","⚡ SCALP","🧠 AUTO"}:
+        _send(
+            "ℹ️ SCALP и AUTO больше не являются торговыми режимами. "
+            "Доступны 🟦 NORMAL и 🔥 MICRO; обучение работает отдельно в shadow lab.",
+            "MODES"
+        )
+        return {"status":"OK","action":"RETIRED_MODE_NOTICE"}
+
     target=parse_mode_command(text)
     if target:
         _switch(target); return {"status":"OK","action":"SWITCH","target":target}
 
     _send(
         "Главное меню: 🎛 РЕЖИМЫ · 📊 МОНИТОРИНГ · 🧪 ОБУЧЕНИЕ · 🌐 РЫНКИ\n"
-        "Команды: /normal /scalp /micro /auto /pause /status /cost /auto_stats "
-        "/scalp_stats /micro_stats /tournament /trainer /lab /gold /defi /brain /learning",
+        "Команды: /normal /micro /pause /status /cost /micro_stats "
+        "/shadow /tournament /trainer /lab /gold /defi /brain /learning",
         "MAIN"
     )
     return {"status":"OK","action":"HELP"}
@@ -240,11 +244,12 @@ def run_forever():
         STATE.update({"status":"DISABLED","last_error":None}); return
     if not (config.TELEGRAM_ENABLED and config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_CHAT_ID):
         STATE.update({"status":"DISABLED","last_error":"TELEGRAM_NOT_CONFIGURED"}); return
+
     offset=_load_offset()
     try:
         if offset is None:
-            # On first install skip historical pending commands so an old /scalp
-            # cannot unexpectedly switch the bot after deployment.
+            # On first install skip historical pending commands so a retired
+            # mode command cannot unexpectedly affect a fresh deployment.
             old=_get_updates(None,0)
             if old:
                 offset=max(int(x.get("update_id",0)) for x in old)+1
