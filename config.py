@@ -143,6 +143,11 @@ MTF_TRANSITION_MIN_TP2_R = float(os.getenv("MTF_TRANSITION_MIN_TP2_R", "2.00"))
 # If the full size cannot fill within the allowed price/R:R boundary, no trade is opened.
 EXECUTION_QUALITY_ENABLED = os.getenv("EXECUTION_QUALITY_ENABLED", "true").lower() == "true"
 OKX_ENTRY_ORDER_TYPE = os.getenv("OKX_ENTRY_ORDER_TYPE", "fok").strip().lower()
+# Execution v4.1: build FOK from the actual executable touch (ask for LONG,
+# bid for SHORT) instead of last trade. One refresh retry is allowed only if
+# the refreshed quote still passes the same R:R + slippage quality guard.
+OKX_ENTRY_FOK_MAX_ATTEMPTS = int(os.getenv("OKX_ENTRY_FOK_MAX_ATTEMPTS", "2"))
+OKX_ENTRY_FOK_RETRY_DELAY_MS = int(os.getenv("OKX_ENTRY_FOK_RETRY_DELAY_MS", "120"))
 
 # Maximum adverse entry slippage versus the live OKX swap reference immediately
 # before submission. These do NOT loosen R:R; both conditions must pass.
