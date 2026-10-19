@@ -230,6 +230,47 @@ SCALP_FAST_LEVERAGE_HIGH_VOL = float(os.getenv("SCALP_FAST_LEVERAGE_HIGH_VOL", "
 SCALP_FAST_LEVERAGE_NORMAL = float(os.getenv("SCALP_FAST_LEVERAGE_NORMAL", "3"))
 SCALP_FAST_MAX_LEVERAGE = float(os.getenv("SCALP_FAST_MAX_LEVERAGE", "3"))
 
+# ===== ASTRA MICRO v1 =====
+# Demo-first 1-5 minute execution laboratory: 5m context -> 3m setup -> 1m trigger.
+MICRO_ALLOWED_ASSETS = tuple(
+    x.strip().upper() for x in os.getenv("MICRO_ALLOWED_ASSETS", "BTC,ETH,GRAM").split(",") if x.strip()
+)
+MICRO_DECISION_INTERVAL_SECONDS = int(os.getenv("MICRO_DECISION_INTERVAL_SECONDS", "20"))
+MICRO_NEWS_SETTLE_MINUTES = int(os.getenv("MICRO_NEWS_SETTLE_MINUTES", "3"))
+MICRO_MIN_QUALITY = float(os.getenv("MICRO_MIN_QUALITY", "72"))
+MICRO_TRIGGER_MIN_COMPONENTS = int(os.getenv("MICRO_TRIGGER_MIN_COMPONENTS", "4"))
+MICRO_MIN_TRADE_CONFIDENCE = float(os.getenv("MICRO_MIN_TRADE_CONFIDENCE", "88"))
+MICRO_MAX_SPREAD_PCT = float(os.getenv("MICRO_MAX_SPREAD_PCT", "0.05"))
+MICRO_MIN_ATR_PCT = float(os.getenv("MICRO_MIN_ATR_PCT", "0.02"))
+MICRO_MAX_ATR_PCT = float(os.getenv("MICRO_MAX_ATR_PCT", "0.35"))
+MICRO_VOLUME_MIN_RATIO = float(os.getenv("MICRO_VOLUME_MIN_RATIO", "1.10"))
+MICRO_SHORT_CHASE_RSI = float(os.getenv("MICRO_SHORT_CHASE_RSI", "20"))
+MICRO_LONG_CHASE_RSI = float(os.getenv("MICRO_LONG_CHASE_RSI", "80"))
+MICRO_CHASE_IMPULSE_ATR_MULT = float(os.getenv("MICRO_CHASE_IMPULSE_ATR_MULT", "2.50"))
+MICRO_EXTREME_DISTANCE_PCT = float(os.getenv("MICRO_EXTREME_DISTANCE_PCT", "0.10"))
+
+# Tiny stop-risk budget; leverage is margin mechanics, not permission to lose more.
+MICRO_MIN_TP1_R = float(os.getenv("MICRO_MIN_TP1_R", "1.0"))
+MICRO_MIN_TP2_R = float(os.getenv("MICRO_MIN_TP2_R", "1.5"))
+MICRO_MIN_STOP_PCT = float(os.getenv("MICRO_MIN_STOP_PCT", "0.04"))
+MICRO_MAX_STOP_PCT = float(os.getenv("MICRO_MAX_STOP_PCT", "0.35"))
+MICRO_RISK_PCT_BASE = float(os.getenv("MICRO_RISK_PCT_BASE", "0.0015"))
+MICRO_RISK_PCT_BEST = float(os.getenv("MICRO_RISK_PCT_BEST", "0.0025"))
+MICRO_HARD_RISK_PCT = float(os.getenv("MICRO_HARD_RISK_PCT", "0.0025"))
+MICRO_BEST_MIN_QUALITY = float(os.getenv("MICRO_BEST_MIN_QUALITY", "90"))
+MICRO_BEST_MIN_CONFIDENCE = float(os.getenv("MICRO_BEST_MIN_CONFIDENCE", "92"))
+MICRO_LEVERAGE_HIGH_VOL = float(os.getenv("MICRO_LEVERAGE_HIGH_VOL", "5"))
+MICRO_LEVERAGE_NORMAL = float(os.getenv("MICRO_LEVERAGE_NORMAL", "8"))
+MICRO_LEVERAGE_BEST_SETUP = float(os.getenv("MICRO_LEVERAGE_BEST_SETUP", "10"))
+MICRO_MAX_LEVERAGE = float(os.getenv("MICRO_MAX_LEVERAGE", "10"))
+MICRO_MAX_POSITION_PCT = float(os.getenv("MICRO_MAX_POSITION_PCT", "0.80"))
+MICRO_MAX_TOTAL_EXPOSURE_PCT = float(os.getenv("MICRO_MAX_TOTAL_EXPOSURE_PCT", "0.80"))
+MICRO_MAX_OPEN_POSITIONS = int(os.getenv("MICRO_MAX_OPEN_POSITIONS", "1"))
+MICRO_MAX_HOLD_SECONDS = int(os.getenv("MICRO_MAX_HOLD_SECONDS", "300"))
+MICRO_COOLDOWN_SECONDS = int(os.getenv("MICRO_COOLDOWN_SECONDS", "60"))
+MICRO_STOP_LOSS_COOLDOWN_SECONDS = int(os.getenv("MICRO_STOP_LOSS_COOLDOWN_SECONDS", "180"))
+MICRO_MAX_ENTRY_SLIPPAGE_PCT = float(os.getenv("MICRO_MAX_ENTRY_SLIPPAGE_PCT", "0.04"))
+
 # Persistent diagnostics used by /scalp_stats.
 SCALP_STATS_LOG_MAX_MB = float(os.getenv("SCALP_STATS_LOG_MAX_MB", "10"))
 SCALP_STATS_DEFAULT_HOURS = int(os.getenv("SCALP_STATS_DEFAULT_HOURS", "6"))
