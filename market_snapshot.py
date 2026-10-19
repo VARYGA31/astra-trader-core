@@ -2,6 +2,7 @@
 import sys, json, math, statistics
 from datetime import datetime, timezone
 import requests
+import config
 
 from asset_map import ASSETS
 import gold_macro
