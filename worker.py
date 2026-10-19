@@ -47,6 +47,47 @@ R={
 
 def now():return datetime.now(timezone.utc)
 
+def _heartbeat(mode):
+    """Emit a compact, secret-free runtime summary for Railway diagnostics."""
+    try:
+        perf=observability.trade_performance(None)
+        overall=perf.get("overall") or {}
+        ms=micro_stats.summary(6)
+        stream=micro_market_stream.health()
+        payload={
+            "event":"ASTRA_HEARTBEAT",
+            "at_utc":now().isoformat(),
+            "status":R.get("status"),
+            "mode":mode,
+            "execution_mode":config.EXECUTION_MODE,
+            "decision_engine":bool(config.AUTO_DECISION),
+            "trade_execution":bool(config.AUTO_PAPER_EXECUTION),
+            "multi_market_lab":"ON" if config.MULTI_MARKET_TRAINER_V3_ENABLED else "OFF",
+            "micro":{
+                "checks_6h":ms.get("checks",0),
+                "model_calls_6h":ms.get("model_calls",0),
+                "opened_6h":ms.get("opened_trades",0),
+                "closed_6h":ms.get("closed_trades",0),
+                "net_pnl_6h":ms.get("realized_net_pnl_usd",0),
+                "top_blockers":list((ms.get("blockers") or {}).items())[:5],
+                "stream_status":stream.get("status"),
+                "stream_connected":stream.get("connected"),
+            },
+            "trades_all":{
+                "count":overall.get("trades",0),
+                "wins":overall.get("wins",0),
+                "losses":overall.get("losses",0),
+                "win_rate_pct":overall.get("win_rate_pct",0),
+                "net_pnl_usd":overall.get("net_pnl_usd",0),
+                "profit_factor":overall.get("profit_factor"),
+                "avg_r":overall.get("avg_r"),
+            },
+            "shadow_lab_status":crypto_shadow_lab.STATE.get("status"),
+        }
+        print(json.dumps(payload,ensure_ascii=False,separators=(",",":")),flush=True)
+    except Exception as e:
+        print(json.dumps({"event":"ASTRA_HEARTBEAT_ERROR","error":str(e)},separators=(",",":")),flush=True)
+
 def refresh_observability():
     try:
         o=observability.health_summary()
@@ -114,6 +155,7 @@ def main():
     last_news=0
     last_pos=0
     last_exit=0
+    last_heartbeat=0
     last_decision={a:0 for a in config.ALLOWED_ASSETS}
     last_mode=None
 
@@ -133,7 +175,8 @@ def main():
             high=set()
 
             if t-last_news>=config.NEWS_POLL_SECONDS:
-                n=news_listener.poll_once(2)
+                news_assets=config.MICRO_ALLOWED_ASSETS if mode=="MICRO" else config.ALLOWED_ASSETS
+                n=news_listener.poll_once(2,news_assets)
                 R["last_news"]=n
                 last_news=t
 
@@ -208,6 +251,9 @@ def main():
 
             R["status"]="ok"
             R["last_error"]=None
+            if t-last_heartbeat>=config.STATS_HEARTBEAT_SECONDS:
+                _heartbeat(mode)
+                last_heartbeat=t
 
         except Exception:
             R["status"]="degraded"
