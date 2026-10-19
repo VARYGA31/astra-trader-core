@@ -43,8 +43,20 @@ def evaluate(package,force_event=False):
     ):
         return {"call_model":False,"reason":"GUARD_BLOCK","guards":g}
 
-    if int(package.get("account_state",{}).get("open_positions",0))>=config.MICRO_MAX_OPEN_POSITIONS:
-        return {"call_model":False,"reason":"MICRO_MAX_OPEN_POSITIONS"}
+    open_positions=int(package.get("account_state",{}).get("open_positions",0))
+    second_shadow=False
+    if open_positions>=config.MICRO_MAX_OPEN_POSITIONS:
+        # Keep live/demo execution at one MICRO position. With exactly one open
+        # position, optionally continue only for a non-executing shadow test of
+        # whether a second independent opportunity would have added value.
+        if (
+            config.MICRO_SECOND_SHADOW_ENABLED
+            and config.MICRO_MAX_OPEN_POSITIONS==1
+            and open_positions==1
+        ):
+            second_shadow=True
+        else:
+            return {"call_model":False,"reason":"MICRO_MAX_OPEN_POSITIONS"}
 
     ev=_high_event(package)
     age=_age_minutes(ev)
@@ -79,6 +91,7 @@ def evaluate(package,force_event=False):
         "mtf_quality":gate.get("quality"),
         "mtf_mode":"MICRO",
         "new_trigger_candle":new_trigger,
+        "second_position_shadow":bool(second_shadow),
         "mtf":gate,
         "chase_guard":chase,
     }

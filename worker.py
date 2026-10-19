@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from datetime import datetime,timezone
 
 import config,news_listener,position_monitor,trade_cycle,paper_execution,execution_router,decision_gate,observability
-import strategy_mode,micro_decision_gate,telegram_control,micro_stats,micro_market_stream,crypto_shadow_lab
+import strategy_mode,micro_decision_gate,telegram_control,micro_stats,micro_market_stream,micro_second_shadow,crypto_shadow_lab
 import adaptive_memory,adaptive_cost,adaptive_trainer,multi_market_trainer,strategy_tournament
 import position_exit_guard
 from astra_client import decide
@@ -35,6 +35,7 @@ R={
     "strategy_mode":strategy_mode.status(),
     "telegram_control":telegram_control.STATE,
     "micro_stats_6h":micro_stats.summary(6),
+    "micro_second_shadow":micro_second_shadow.summary(),
     "micro_stream":micro_market_stream.health(),
     "crypto_shadow_lab":dict(crypto_shadow_lab.STATE),
     "adaptive_brain":adaptive_memory.load_brain(),
@@ -54,6 +55,7 @@ def _heartbeat(mode):
         overall=perf.get("overall") or {}
         ms=micro_stats.summary(6)
         stream=micro_market_stream.health()
+        second_shadow=micro_second_shadow.summary()
         payload={
             "event":"ASTRA_HEARTBEAT",
             "at_utc":now().isoformat(),
@@ -72,6 +74,7 @@ def _heartbeat(mode):
                 "top_blockers":list((ms.get("blockers") or {}).items())[:5],
                 "stream_status":stream.get("status"),
                 "stream_connected":stream.get("connected"),
+                "second_shadow":second_shadow,
             },
             "trades_all":{
                 "count":overall.get("trades",0),
@@ -99,6 +102,7 @@ def refresh_observability():
         started=o.get("started_at_utc")
         R["performance"]=observability.trade_performance(started)
         R["micro_stats_6h"]=micro_stats.summary(6)
+        R["micro_second_shadow"]=micro_second_shadow.summary()
         R["micro_stream"]=micro_market_stream.health()
         R["crypto_shadow_lab"]=dict(crypto_shadow_lab.STATE)
         R["decision_engine_enabled"]=bool(config.AUTO_DECISION)
@@ -199,6 +203,8 @@ def main():
 
             if t-last_pos>=config.POSITION_POLL_SECONDS:
                 R["last_position_check"]=check_positions()
+                if mode=="MICRO":
+                    micro_second_shadow.evaluate_pending()
                 refresh_observability()
                 last_pos=t
 
@@ -235,7 +241,12 @@ def main():
                             d["gate"]=gate
                             d["strategy_mode"]=mode
                             R["model_calls"]+=1
-                            x=trade_cycle.execute(d) if config.AUTO_PAPER_EXECUTION else {"status":"DECISION_ONLY"}
+                            if mode=="MICRO" and gate.get("second_position_shadow"):
+                                # Explicitly bypass execution: this experiment only
+                                # measures whether a second position would add NET edge.
+                                x=micro_second_shadow.consider(p,d,gate)
+                            else:
+                                x=trade_cycle.execute(d) if config.AUTO_PAPER_EXECUTION else {"status":"DECISION_ONLY"}
 
                         R["last_decisions"][a]={
                             "at_utc":now().isoformat(),
