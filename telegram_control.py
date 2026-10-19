@@ -8,7 +8,7 @@ PAUSED is always allowed and stops only new entries.
 import json,time
 from pathlib import Path
 import requests
-import config,strategy_mode,telegram_notifier,demo_ledger,scalp_stats,micro_stats,adaptive_memory,adaptive_cost,adaptive_stats,adaptive_trainer,multi_market_trainer,strategy_tournament
+import config,strategy_mode,telegram_notifier,demo_ledger,scalp_stats,micro_stats,micro_scorecard,adaptive_memory,adaptive_cost,adaptive_stats,adaptive_trainer,multi_market_trainer,strategy_tournament
 from okx_demo_adapter import OKXDemoAdapter
 
 API="https://api.telegram.org"
@@ -27,7 +27,7 @@ def keyboard(section="MAIN"):
         rows=[
             [{"text":"📊 STATUS"},{"text":"💰 COST"}],
             [{"text":"📊 AUTO STATS"},{"text":"📈 SCALP STATS"}],
-            [{"text":"🔥 MICRO STATS"}],
+            [{"text":"🔥 MICRO STATS"},{"text":"🎯 MICRO-100"}],
             [{"text":"⬅️ ГЛАВНАЯ"}],
         ]
     elif section=="LEARNING":
@@ -184,6 +184,8 @@ def handle_update(update):
         _send(_scalp_stats_text(6),"MONITOR"); return {"status":"OK","action":"SCALP_STATS"}
     if lower in {"/micro_stats","/microstats"} or upper=="🔥 MICRO STATS":
         _send(micro_stats.telegram_text(6),"MONITOR"); return {"status":"OK","action":"MICRO_STATS"}
+    if lower in {"/micro100","/micro_score","/micro_scorecard"} or upper=="🎯 MICRO-100":
+        _send(micro_scorecard.telegram_text(),"MONITOR"); return {"status":"OK","action":"MICRO_100"}
     if lower in {"/brain","/astra_brain"} or upper=="🧠 BRAIN":
         _send(adaptive_memory.brain_text(),"LEARNING"); return {"status":"OK","action":"BRAIN"}
     if lower in {"/learning","/learn"} or upper=="🎓 LEARNING":
@@ -210,7 +212,7 @@ def handle_update(update):
     _send(
         "Главное меню: 🎛 РЕЖИМЫ · 📊 МОНИТОРИНГ · 🧪 ОБУЧЕНИЕ · 🌐 РЫНКИ\n"
         "Команды: /normal /scalp /micro /auto /pause /status /cost /auto_stats "
-        "/scalp_stats /micro_stats /tournament /trainer /lab /gold /defi /brain /learning",
+        "/scalp_stats /micro_stats /micro100 /tournament /trainer /lab /gold /defi /brain /learning",
         "MAIN"
     )
     return {"status":"OK","action":"HELP"}
