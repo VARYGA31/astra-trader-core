@@ -7,6 +7,7 @@ from pathlib import Path
 import config
 
 FILE=Path(config.STATE_DIR)/"micro_stats.jsonl"
+JOURNAL=Path(config.STATE_DIR)/"trade_journal.jsonl"
 LOCK=threading.Lock()
 
 def _now(): return datetime.now(timezone.utc)
@@ -73,6 +74,23 @@ def _rows(hours):
     except Exception:pass
     return out
 
+def _closed_trades(hours):
+    cutoff=_now()-timedelta(hours=float(hours))
+    out=[]; seen=set()
+    try: lines=JOURNAL.read_text(encoding="utf-8").splitlines()
+    except Exception: return out
+    for line in lines:
+        try:r=json.loads(line)
+        except Exception:continue
+        if r.get("event")!="OKX_POSITION_CLOSED":continue
+        if str(r.get("strategy_mode") or "").upper()!="MICRO":continue
+        dt=_parse(r.get("timestamp_utc"))
+        if not dt or dt<cutoff:continue
+        key=r.get("close_event_id") or (str(r.get("asset"))+":"+str(r.get("order_id"))+":"+str(r.get("opened_at_utc")))
+        if key in seen:continue
+        seen.add(key);out.append(r)
+    return out
+
 def summary(hours=None):
     hours=float(hours or config.MICRO_STATS_DEFAULT_HOURS)
     rows=_rows(hours)
@@ -100,6 +118,14 @@ def summary(hours=None):
                 arr.append(v)
             except Exception:pass
     avg=lambda x: round(sum(x)/len(x),5) if x else None
+    closed=_closed_trades(hours)
+    pnls=[]; fees=[]
+    for x in closed:
+        try:pnls.append(float(x.get("pnl_usd") or 0))
+        except Exception:pass
+        try:fees.append(float(x.get("fee_usd") or 0))
+        except Exception:pass
+    wins=sum(1 for x in pnls if x>0); losses=sum(1 for x in pnls if x<0)
     return {
         "status":"OK","hours":hours,"checks":len(rows),"by_asset":dict(assets),
         "microstructure_sources":dict(sources),"blockers":dict(blockers.most_common()),
@@ -109,6 +135,10 @@ def summary(hours=None):
         "execution_rejections":dict(execs.most_common()),
         "avg_spread_pct":avg(spreads),"avg_cost_r":avg(costrs),
         "avg_net_tp1_r":avg(net1),"avg_net_tp2_r":avg(net2),
+        "closed_trades":len(pnls),"wins":wins,"losses":losses,
+        "win_rate_pct":round(wins/len(pnls)*100.0,2) if pnls else 0.0,
+        "realized_net_pnl_usd":round(sum(pnls),6),
+        "realized_fee_usd":round(sum(fees),6),
     }
 
 def telegram_text(hours=None):
@@ -120,6 +150,8 @@ def telegram_text(hours=None):
         f"Astra calls: <b>{s.get('model_calls',0)}</b>",
         f"LONG/SHORT: <b>{s.get('model_trade_decisions',0)}</b> | WAIT: <b>{s.get('model_waits',0)}</b>",
         f"Открыто: <b>{s.get('opened_trades',0)}</b> | FOK no-fill: <b>{s.get('fok_not_filled',0)}</b>",
+        f"Закрыто: <b>{s.get('closed_trades',0)}</b> | Win rate: <b>{s.get('win_rate_pct',0):.1f}%</b>",
+        f"Realized NET PnL: <b>${s.get('realized_net_pnl_usd',0):.4f}</b> | Fees: <b>${s.get('realized_fee_usd',0):.4f}</b>",
         f"NET-edge rejects: <b>{s.get('net_edge_rejections',0)}</b>",
         f"Avg spread: <b>{s.get('avg_spread_pct')}</b>% | Avg cost: <b>{s.get('avg_cost_r')}</b>R","",
         "<b>Чаще блокирует:</b>",
