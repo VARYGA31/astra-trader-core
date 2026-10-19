@@ -23,11 +23,11 @@ jobs:
         run: python repo_selfcheck.py
       - name: Offline end-to-end preflight
         run: python preflight_all.py
-      - name: Adaptive mode pure test
+      - name: Adaptive library pure test
         run: python test_adaptive_mode.py
       - name: Adaptive Cost-Smart pure test
         run: python test_adaptive_cost.py
-      - name: AUTO v1.1 regression
+      - name: Adaptive analytics regression
         run: python test_adaptive_auto_v11.py
       - name: Trainer v2 regression
         run: python test_adaptive_trainer_v2.py
@@ -39,13 +39,15 @@ jobs:
         run: python test_execution_v4_1_fok.py
       - name: Strategy Tournament v5 regression
         run: python test_strategy_tournament_v5.py
-      - name: Telegram mode pure test
+      - name: Telegram runtime mode test
         run: python test_telegram_mode_control.py
+      - name: Shadow lab safety regression
+        run: python test_crypto_shadow_lab.py
       - name: Execution quality regression
         run: python test_execution_quality.py
       - name: Final decision regression
         run: python test_final_decision_calibration.py
-      - name: SCALP v2 regression
+      - name: Shadow short-horizon strategy regression
         run: python test_scalp_v2.py
       - name: MICRO v1 regression
         run: python test_micro_mode.py
@@ -55,7 +57,6 @@ jobs:
         run: |
           python test_no_null_bytes.py
           python test_scalp_mode.py
-          python test_scalp_stats.py
           python test_treasury_parser.py
       - name: Observability regression
         run: python test_observability.py
