@@ -77,7 +77,7 @@ def account_state():
 
 def prepare(asset,hours=12,strategy_mode_name=None):
     active_mode=str(strategy_mode_name or strategy_mode.get_mode()).upper()
-    c = decision_context.build(asset,hours)
+    c = decision_context.build(asset,hours,include_micro=(active_mode=="MICRO"))
     s = account_state()
     ts = parse_ts(c.get("market",{}).get("generated_at_utc"))
     age = (datetime.now(timezone.utc)-ts).total_seconds() if ts else 10**9
