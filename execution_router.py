@@ -30,11 +30,13 @@ def open_trade(decision, risk):
     if config.ONE_POSITION_PER_ASSET and asset in set(summary.get("assets", [])):
         return {"status":"REJECTED","reason":"ASSET_ALREADY_HAS_OPEN_POSITION_EXCHANGE"}
 
-    if int(summary.get("open_positions", 0)) >= config.MAX_OPEN_POSITIONS:
+    max_open_positions = config.MICRO_MAX_OPEN_POSITIONS if strategy_mode=="MICRO" else config.MAX_OPEN_POSITIONS
+    if int(summary.get("open_positions", 0)) >= max_open_positions:
         return {
             "status":"REJECTED",
             "reason":"MAX_OPEN_POSITIONS_EXCHANGE_GUARD",
             "exchange_summary":summary,
+            "maximum":max_open_positions,
         }
 
     if config.BLOCK_BTC_ETH_SAME_DIRECTION and asset in {"BTC","ETH"}:
@@ -51,7 +53,8 @@ def open_trade(decision, risk):
     equity = float(ledger.get("equity") or config.INITIAL_EQUITY)
     exposure_now = float(summary.get("current_exposure_usd", 0))
     proposed = float(risk.get("position_notional_usd", 0))
-    exposure_cap = equity * config.MAX_TOTAL_EXPOSURE_PCT
+    exposure_cap_pct = config.MICRO_MAX_TOTAL_EXPOSURE_PCT if strategy_mode=="MICRO" else config.MAX_TOTAL_EXPOSURE_PCT
+    exposure_cap = equity * exposure_cap_pct
 
     if exposure_now + proposed > exposure_cap + 1e-9:
         return {
