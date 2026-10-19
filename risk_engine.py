@@ -45,9 +45,27 @@ def _scalp_fast_risk_pct(confidence,mtf_quality,dd_mult):
     base=config.SCALP_FAST_RISK_PCT_BEST if best else config.SCALP_FAST_RISK_PCT_BASE
     return min(base*dd_mult,config.SCALP_FAST_HARD_RISK_PCT),quality
 
+def _micro_risk_pct(confidence,mtf_quality,dd_mult):
+    confidence=float(confidence); mtf_quality=float(mtf_quality)
+    quality=min(confidence,mtf_quality)
+    if confidence<config.MICRO_MIN_TRADE_CONFIDENCE or mtf_quality<config.MICRO_MIN_QUALITY:
+        return None,quality
+    best=(confidence>=config.MICRO_BEST_MIN_CONFIDENCE and mtf_quality>=config.MICRO_BEST_MIN_QUALITY)
+    base=config.MICRO_RISK_PCT_BEST if best else config.MICRO_RISK_PCT_BASE
+    return min(base*dd_mult,config.MICRO_HARD_RISK_PCT),quality
+
 def _leverage(asset, volatility, quality, confidence, stop_dist_pct, strategy_mode="NORMAL", scalp_tier="PRIME"):
     v=str(volatility or "NORMAL").upper()
     strategy_mode=str(strategy_mode or "NORMAL").upper()
+
+    if strategy_mode=="MICRO":
+        if v in {"ELEVATED","HIGH","EXTREME"}:
+            lev=config.MICRO_LEVERAGE_HIGH_VOL
+        elif quality>=config.MICRO_BEST_MIN_QUALITY and confidence>=config.MICRO_BEST_MIN_CONFIDENCE:
+            lev=config.MICRO_LEVERAGE_BEST_SETUP
+        else:
+            lev=config.MICRO_LEVERAGE_NORMAL
+        return min(max(float(lev),1.0),float(config.MICRO_MAX_LEVERAGE))
 
     if strategy_mode=="SCALP":
         scalp_tier=str(scalp_tier or "PRIME").upper()
@@ -106,13 +124,21 @@ def evaluate(d):
     confidence=float(d.get("confidence",0) or 0)
     mtf_quality=float(d.get("mtf_quality",0) or 0)
     mtf_mode=str(d.get("mtf_mode") or d.get("mtf_gate",{}).get("mode") or "NORMAL").upper()
-    strategy_mode=str(d.get("strategy_mode") or ("SCALP" if mtf_mode=="SCALP" else "NORMAL")).upper()
+    strategy_mode=str(d.get("strategy_mode") or ("MICRO" if mtf_mode=="MICRO" else "SCALP" if mtf_mode=="SCALP" else "NORMAL")).upper()
+    is_micro=(strategy_mode=="MICRO" or mtf_mode=="MICRO")
     is_scalp=(strategy_mode=="SCALP" or mtf_mode=="SCALP")
     scalp_tier=str(d.get("scalp_tier") or d.get("gate",{}).get("scalp_tier") or d.get("mtf_gate",{}).get("tier") or "PRIME").upper()
     if scalp_tier not in {"PRIME","FAST"}: scalp_tier="PRIME"
     is_transition=(mtf_mode=="TRANSITION")
 
-    if is_scalp:
+    if is_micro:
+        if asset not in set(config.MICRO_ALLOWED_ASSETS):
+            return reject("MICRO_ASSET_NOT_ALLOWED")
+        if confidence<config.MICRO_MIN_TRADE_CONFIDENCE:
+            return reject("MICRO_CONFIDENCE_TOO_LOW",{"confidence":confidence,"minimum":config.MICRO_MIN_TRADE_CONFIDENCE})
+        if mtf_quality<config.MICRO_MIN_QUALITY:
+            return reject("MICRO_QUALITY_TOO_LOW",{"mtf_quality":mtf_quality,"minimum":config.MICRO_MIN_QUALITY})
+    elif is_scalp:
         if asset not in set(config.SCALP_ALLOWED_ASSETS):
             return reject("SCALP_ASSET_NOT_ALLOWED")
         min_conf=config.SCALP_FAST_MIN_TRADE_CONFIDENCE if scalp_tier=="FAST" else config.SCALP_MIN_TRADE_CONFIDENCE
@@ -164,7 +190,9 @@ def evaluate(d):
             return reject("INVALID_LEVELS_FOR_SHORT")
 
     rr1=_rr(entry,stop,tp1); rr2=_rr(entry,stop,tp2)
-    if is_scalp:
+    if is_micro:
+        min_tp1=config.MICRO_MIN_TP1_R; min_tp2=config.MICRO_MIN_TP2_R
+    elif is_scalp:
         if scalp_tier=="FAST":
             min_tp1=config.SCALP_FAST_MIN_TP1_R; min_tp2=config.SCALP_FAST_MIN_TP2_R
         else:
@@ -185,20 +213,31 @@ def evaluate(d):
         return reject("MAX_DRAWDOWN_REACHED",{"trading_halted":True})
     if float(d.get("daily_pnl",0))<=-(init*config.DAILY_LOSS_LIMIT_PCT):
         return reject("DAILY_LOSS_LIMIT_REACHED")
-    if int(d.get("open_positions",0))>=config.MAX_OPEN_POSITIONS:
+    max_open=config.MICRO_MAX_OPEN_POSITIONS if is_micro else config.MAX_OPEN_POSITIONS
+    if int(d.get("open_positions",0))>=max_open:
         return reject("MAX_OPEN_POSITIONS_REACHED")
 
     dd_mult=.25 if dd>=.20 else .5 if dd>=.15 else .75 if dd>=.10 else 1.0
     stop_dist_pct=abs(entry-stop)/entry
     if stop_dist_pct<=0:return reject("INVALID_STOP_DISTANCE")
-    if is_scalp:
+    if is_micro:
+        stop_pct=stop_dist_pct*100
+        if stop_pct<config.MICRO_MIN_STOP_PCT:
+            return reject("MICRO_STOP_TOO_TIGHT",{"stop_pct":stop_pct,"minimum":config.MICRO_MIN_STOP_PCT})
+        if stop_pct>config.MICRO_MAX_STOP_PCT:
+            return reject("MICRO_STOP_TOO_WIDE",{"stop_pct":stop_pct,"maximum":config.MICRO_MAX_STOP_PCT})
+    elif is_scalp:
         stop_pct=stop_dist_pct*100
         if stop_pct<config.SCALP_MIN_STOP_PCT:
             return reject("SCALP_STOP_TOO_TIGHT",{"stop_pct":stop_pct,"minimum":config.SCALP_MIN_STOP_PCT})
         if stop_pct>config.SCALP_MAX_STOP_PCT:
             return reject("SCALP_STOP_TOO_WIDE",{"stop_pct":stop_pct,"maximum":config.SCALP_MAX_STOP_PCT})
 
-    if is_scalp:
+    if is_micro:
+        risk_pct,quality=_micro_risk_pct(confidence,mtf_quality,dd_mult)
+        if risk_pct is None:
+            return reject("MICRO_TRADE_QUALITY_TOO_LOW",{"quality":quality})
+    elif is_scalp:
         if scalp_tier=="FAST":
             risk_pct,quality=_scalp_fast_risk_pct(confidence,mtf_quality,dd_mult)
         else:
@@ -221,14 +260,16 @@ def evaluate(d):
     leverage=_leverage(asset,d.get("volatility_regime"),quality,confidence,stop_dist_pct,strategy_mode=strategy_mode,scalp_tier=scalp_tier)
 
     # Notional is always risk-budgeted. Higher leverage does NOT increase risk budget.
+    position_cap_pct=config.MICRO_MAX_POSITION_PCT if is_micro else config.MAX_POSITION_PCT
     notional=min(
         max(eq*config.NORMAL_POSITION_PCT,risk_usd/stop_dist_pct),
-        eq*config.MAX_POSITION_PCT
+        eq*position_cap_pct
     )
     if notional*stop_dist_pct>risk_usd:
         notional=risk_usd/stop_dist_pct
 
-    exposure_left=max(0.0,eq*config.MAX_TOTAL_EXPOSURE_PCT-float(d.get("current_exposure_usd",0)))
+    exposure_cap_pct=config.MICRO_MAX_TOTAL_EXPOSURE_PCT if is_micro else config.MAX_TOTAL_EXPOSURE_PCT
+    exposure_left=max(0.0,eq*exposure_cap_pct-float(d.get("current_exposure_usd",0)))
     notional=min(notional,exposure_left)
     if notional<=0:return reject("NO_EXPOSURE_CAPACITY")
 
