@@ -5,6 +5,7 @@ from collections import Counter
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import config
+import micro_second_shadow
 
 FILE=Path(config.STATE_DIR)/"micro_stats.jsonl"
 JOURNAL=Path(config.STATE_DIR)/"trade_journal.jsonl"
@@ -158,4 +159,13 @@ def telegram_text(hours=None):
     ]
     for k,v in list(b.items())[:8]: lines.append(f"• {k}: <b>{v}</b>")
     if not b: lines.append("• пока данных недостаточно")
+    ss=micro_second_shadow.summary()
+    lines += [
+        "",
+        "🧪 <b>Вторая позиция — shadow</b>",
+        f"Оценено: <b>{ss.get('evaluated',0)}</b> | pending: <b>{ss.get('pending',0)}</b>",
+        f"W/L: <b>{ss.get('wins',0)}/{ss.get('losses',0)}</b> | Win rate: <b>{ss.get('win_rate_pct',0):.1f}%</b>",
+        f"Shadow NET PnL: <b>${ss.get('net_pnl_usd',0):.4f}</b> | PF: <b>{ss.get('profit_factor')}</b>",
+        "Реальные ордера второй позиции: <b>OFF</b>",
+    ]
     return "\n".join(lines)
