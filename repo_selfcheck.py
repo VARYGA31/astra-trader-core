@@ -5,7 +5,7 @@ import json,py_compile
 required=[
 "config.py","asset_map.py","market_snapshot.py",
 "news_sources.py","news_verifier.py","telegram_markettwits.py","news_snapshot.py","news_listener.py","news_cache.py",
-"micro_market_stream.py","micro_stats.py",
+"micro_market_stream.py","micro_stats.py","crypto_shadow_lab.py",
 "decision_context.py","decision_gate.py","mtf_gate.py","scalp_gate.py","scalp_decision_gate.py","scalp_stats.py","strategy_mode.py","performance_guard.py","gold_macro.py","adaptive_client.py","adaptive_engine.py","adaptive_memory.py","adaptive_cost.py","adaptive_stats.py","adaptive_trainer.py","defi_universe.py","multi_market_trainer.py","strategy_tournament.py","risk_engine.py","paper_execution.py","trade_cycle.py",
 "position_monitor.py","trade_journal.py","cooldown.py","execution_quality.py","observability.py","analytics_report.py",
 "astra_client.py","worker.py","exchange_adapter.py",
