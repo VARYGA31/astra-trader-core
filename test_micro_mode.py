@@ -56,3 +56,18 @@ def test_micro_time_stop_helper():
     assert okx_position_monitor._micro_time_stop_due(rec, now_ts=1767225901.0) is True
     rec["strategy_mode"]="SCALP"
     assert okx_position_monitor._micro_time_stop_due(rec, now_ts=1767225901.0) is False
+
+
+if __name__=="__main__":
+    test_micro_gate_long()
+    test_micro_risk_is_bounded()
+    test_micro_execution_rr_and_slippage()
+    test_micro_time_stop_helper()
+    import json
+    print(json.dumps({
+        "status":"OK",
+        "mode":"MICRO",
+        "max_leverage":config.MICRO_MAX_LEVERAGE,
+        "hard_risk_pct":config.MICRO_HARD_RISK_PCT,
+        "max_hold_seconds":config.MICRO_MAX_HOLD_SECONDS,
+    },ensure_ascii=False,indent=2))
