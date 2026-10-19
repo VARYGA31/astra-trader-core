@@ -21,6 +21,8 @@ jobs:
         run: pip install -r requirements.txt
       - name: Repository self-check
         run: python repo_selfcheck.py
+      - name: Offline end-to-end preflight
+        run: python preflight_all.py
       - name: Adaptive mode pure test
         run: python test_adaptive_mode.py
       - name: Adaptive Cost-Smart pure test
