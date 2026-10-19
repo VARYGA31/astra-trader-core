@@ -17,6 +17,19 @@ PROCESSED = Path(config.STATE_DIR) / "okx_processed_closes.json"
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
+def _micro_time_stop_due(rec, now_ts=None):
+    if str((rec or {}).get("strategy_mode") or "").upper()!="MICRO":
+        return False
+    opened=(rec or {}).get("opened_at_utc")
+    if not opened:
+        return False
+    try:
+        opened_ts=datetime.fromisoformat(str(opened).replace("Z","+00:00")).timestamp()
+    except Exception:
+        return False
+    current=time.time() if now_ts is None else float(now_ts)
+    return current-opened_ts>=float(config.MICRO_MAX_HOLD_SECONDS)
+
 def _atomic_save(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -199,8 +212,12 @@ def check_once():
             telegram_notifier.notify_close(message)
             trade_journal.append_event({"event":"OKX_POSITION_CLOSED", **message})
             demo_ledger.apply_closed_trade(pnl)
-            if reason == "STOP_LOSS":
-                stop_cd=(config.SCALP_STOP_LOSS_COOLDOWN_SECONDS if str(rec.get("strategy_mode") or "NORMAL").upper()=="SCALP" else config.STOP_LOSS_COOLDOWN_SECONDS)
+            rec_mode=str(rec.get("strategy_mode") or "NORMAL").upper()
+            if rec_mode=="MICRO":
+                micro_cd=config.MICRO_STOP_LOSS_COOLDOWN_SECONDS if reason=="STOP_LOSS" else config.MICRO_COOLDOWN_SECONDS
+                cooldown.set_cooldown(asset, seconds=micro_cd, reason=reason)
+            elif reason == "STOP_LOSS":
+                stop_cd=(config.SCALP_STOP_LOSS_COOLDOWN_SECONDS if rec_mode=="SCALP" else config.STOP_LOSS_COOLDOWN_SECONDS)
                 cooldown.set_cooldown(asset, seconds=stop_cd, reason=reason)
             elif str(reason).startswith("EMERGENCY_"):
                 cooldown.set_cooldown(asset, seconds=config.EMERGENCY_EXIT_COOLDOWN_SECONDS, reason=reason)
@@ -218,6 +235,43 @@ def check_once():
             continue
 
         qty = abs(float(pos.get("pos") or 0))
+
+        # MICRO is a 1-5 minute experiment. It never turns into an accidental
+        # swing position: after the hard hold limit, close the remaining size.
+        if qty>0 and _micro_time_stop_due(rec):
+            try:
+                cleanup=adapter.cancel_attached_algos(asset,rec.get("order_id"))
+                close=adapter.close_market(asset,str(rec.get("side") or "").upper(),qty)
+                row=(close.get("data") or [{}])[0]
+                close_ord=row.get("ordId")
+                if not close_ord:
+                    raise RuntimeError(f"MICRO_TIME_STOP_CLOSE_NO_ORDER_ID:{close}")
+                terminal=adapter.wait_filled(asset,close_ord,timeout=15) or {}
+                if terminal.get("state")!="filled":
+                    raise RuntimeError(f"MICRO_TIME_STOP_CLOSE_NOT_FILLED:{terminal}")
+                rec["forced_close_reason"]="MICRO_TIME_STOP"
+                rec["forced_close_details"]={
+                    "max_hold_seconds":config.MICRO_MAX_HOLD_SECONDS,
+                    "close_order_id":close_ord,
+                    "algo_cleanup":cleanup,
+                }
+                rec["forced_close_marked_at_utc"]=now_iso()
+                state=load(); state[asset]=rec; save(state)
+                trade_journal.append_event({
+                    "event":"MICRO_TIME_STOP_SUBMITTED",
+                    "asset":asset,
+                    "side":rec.get("side"),
+                    "qty_contracts":qty,
+                    "close_order_id":close_ord,
+                    "max_hold_seconds":config.MICRO_MAX_HOLD_SECONDS,
+                    "timestamp_utc":now_iso(),
+                })
+                results.append({"asset":asset,"status":"MICRO_TIME_STOP_FILLED","close_order_id":close_ord})
+                continue
+            except Exception as e:
+                results.append({"asset":asset,"status":"MICRO_TIME_STOP_FAILED","error":str(e)})
+                continue
+
         last_qty = float(rec.get("last_qty_contracts", rec.get("qty_contracts", qty)))
 
         # Detect exchange-side partial reduction only. Do not submit a close here.
