@@ -3,11 +3,11 @@ import sys,json
 from datetime import datetime,timezone
 import config,market_snapshot,news_snapshot
 
-def build(asset,hours=12):
+def build(asset,hours=12,include_micro=False):
     if asset not in config.ALLOWED_ASSETS:
         return {"status":"TRADE_NOT_ALLOWED"}
 
-    m=market_snapshot.snapshot(asset)
+    m=market_snapshot.snapshot(asset,include_micro=include_micro)
     n=news_snapshot.snapshot(asset,hours)
 
     guards={

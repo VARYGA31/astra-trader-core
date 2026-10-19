@@ -27,6 +27,17 @@ ASTRA SCALP v2 FINAL DECISION POLICY:
 - Never invent a blocker. Name the exact supplied evidence in reason.
 """
 
+MICRO_POLICY = """
+ASTRA MICRO v1 FINAL DECISION POLICY:
+- This is a demo-only 1-5 minute micro-scalp. The Python gate already performed 5M context -> 3M setup -> 1M trigger filtering.
+- Use only model_gate.allowed_direction. Do not reverse the deterministic direction.
+- Prefer action over hesitation only when the supplied 1M/3M structure remains intact and spread/liquidity are suitable.
+- The trade is expected to resolve quickly. Stop must be a real microstructure invalidation, not an arbitrary ultra-tight number.
+- Targets must satisfy the supplied MICRO minimum R:R and remain plausible inside a few minutes.
+- WAIT only for a concrete blocker visible in the supplied data: CHASE_RISK, STRUCTURE_CONFLICT, NEWS_RISK, VOLATILITY_RISK, LIQUIDITY_SPREAD_RISK, RR_OR_STOP_INVALID, REVERSAL_RISK, or DATA_QUALITY.
+- Never increase size or leverage. Python owns risk, notional, leverage and the 5-minute hard time stop.
+"""
+
 DECISION_POLICY = NORMAL_POLICY
 
 BASE_INSTRUCTIONS="""You are ASTRA TRADER's final trade decision engine.
@@ -69,7 +80,7 @@ def extract(text):
 
 def _compact_mtf(mtf,mode):
     if not isinstance(mtf,dict): return mtf
-    keep={"5m","15m","1h"} if mode=="SCALP" else {"15m","1h","4h"}
+    keep={"1m","3m","5m"} if mode=="MICRO" else ({"5m","15m","1h"} if mode=="SCALP" else {"15m","1h","4h"})
     out=dict(mtf)
     frames=mtf.get("frames") or {}
     out["frames"]={k:v for k,v in frames.items() if k in keep}
@@ -82,7 +93,7 @@ def _compact(p):
     for e in n.get("events",[])[:config.MAX_MODEL_NEWS_EVENTS]:
         ev.append({k:e.get(k) for k in ("id","source","verification_status","published_at_utc","title","event_type","impact_hint","trade_usable")})
     policy={
-        "version":"scalp_v2" if mode=="SCALP" else "normal_cal_v1",
+        "version":"micro_v1" if mode=="MICRO" else "scalp_v2" if mode=="SCALP" else "normal_cal_v1",
         "strategy_mode":mode,
         "normal_min_trade_confidence":config.MIN_TRADE_CONFIDENCE,
         "transition_min_trade_confidence":config.MTF_TRANSITION_MIN_CONFIDENCE,
@@ -93,6 +104,11 @@ def _compact(p):
         "scalp_prime_min_tp2_r":config.SCALP_MIN_TP2_R,
         "scalp_fast_min_tp1_r":config.SCALP_FAST_MIN_TP1_R,
         "scalp_fast_min_tp2_r":config.SCALP_FAST_MIN_TP2_R,
+        "micro_min_trade_confidence":config.MICRO_MIN_TRADE_CONFIDENCE,
+        "micro_min_quality":config.MICRO_MIN_QUALITY,
+        "micro_min_tp1_r":config.MICRO_MIN_TP1_R,
+        "micro_min_tp2_r":config.MICRO_MIN_TP2_R,
+        "micro_max_hold_seconds":config.MICRO_MAX_HOLD_SECONDS,
         "wait_requires_concrete_blocker":True,
     }
     return {
@@ -127,10 +143,10 @@ def _normalize_decision(d,package):
     except Exception:d["confidence"]=0.0
     a=str(d.get("action","WAIT")).upper(); d["action"]=a if a in {"LONG","SHORT","WAIT"} else "WAIT"
     d["asset"]=str(d.get("asset",package.get("asset",""))).upper()
-    d["timeframe"]=d.get("timeframe") or package.get("timeframe") or ("5m" if mode=="SCALP" else config.TRADING_TIMEFRAME)
+    d["timeframe"]=d.get("timeframe") or package.get("timeframe") or ("1m" if mode=="MICRO" else "5m" if mode=="SCALP" else config.TRADING_TIMEFRAME)
     d["strategy_mode"]=mode
     d["setup_type"]=str(d.get("setup_type","NONE")).upper()
-    d["decision_policy_version"]="scalp_v2" if mode=="SCALP" else "normal_cal_v1"
+    d["decision_policy_version"]="micro_v1" if mode=="MICRO" else "scalp_v2" if mode=="SCALP" else "normal_cal_v1"
     if mode=="SCALP":
         d["scalp_tier"]=str(package.get("model_gate",{}).get("scalp_tier") or package.get("model_gate",{}).get("mtf",{}).get("tier") or "PRIME").upper()
     cat=str(d.get("wait_category") or "NONE").upper().strip()
@@ -145,7 +161,7 @@ def _normalize_decision(d,package):
 
 def decide(package):
     mode=str(package.get("strategy_mode") or "NORMAL").upper()
-    policy=SCALP_POLICY if mode=="SCALP" else NORMAL_POLICY
+    policy=MICRO_POLICY if mode=="MICRO" else SCALP_POLICY if mode=="SCALP" else NORMAL_POLICY
     instructions=BASE_INSTRUCTIONS+"\n"+policy
     client=OpenAI(); compact=_compact(package)
     kwargs={

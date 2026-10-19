@@ -19,8 +19,8 @@ def keyboard(section="MAIN"):
     section=str(section or "MAIN").upper()
     if section=="MODES":
         rows=[
-            [{"text":"🟦 NORMAL"},{"text":"⚡ SCALP"},{"text":"🧠 AUTO"}],
-            [{"text":"⏸ PAUSE"}],
+            [{"text":"🟦 NORMAL"},{"text":"⚡ SCALP"},{"text":"🔥 MICRO"}],
+            [{"text":"🧠 AUTO"},{"text":"⏸ PAUSE"}],
             [{"text":"⬅️ ГЛАВНАЯ"}],
         ]
     elif section=="MONITOR":
@@ -59,6 +59,7 @@ def parse_mode_command(text):
     mapping={
         "/NORMAL":"NORMAL","/MODE_NORMAL":"NORMAL","🟦 NORMAL":"NORMAL","NORMAL":"NORMAL",
         "/SCALP":"SCALP","/MODE_SCALP":"SCALP","⚡ SCALP":"SCALP","SCALP":"SCALP",
+        "/MICRO":"MICRO","/MODE_MICRO":"MICRO","🔥 MICRO":"MICRO","MICRO":"MICRO",
         "/AUTO":"AUTO","/MODE_AUTO":"AUTO","🧠 AUTO":"AUTO","AUTO":"AUTO",
         "/PAUSE":"PAUSED","⏸ PAUSE":"PAUSED","PAUSE":"PAUSED","PAUSED":"PAUSED",
     }
@@ -74,7 +75,7 @@ def _summary():
     try: ledger=demo_ledger.status()
     except Exception: ledger={}
     auto="ON" if config.AUTO_DECISION else "OFF"
-    icon="⚡" if mode=="SCALP" else "🟦" if mode=="NORMAL" else "🧠" if mode=="AUTO" else "⏸"
+    icon="🔥" if mode=="MICRO" else "⚡" if mode=="SCALP" else "🟦" if mode=="NORMAL" else "🧠" if mode=="AUTO" else "⏸"
     return (
         f"🎛 <b>ASTRA CONTROL</b>\n\n"
         f"Активный режим: {icon} <b>{mode}</b>\n"
@@ -84,6 +85,7 @@ def _summary():
         f"Demo equity: <b>${float(ledger.get('equity') or 0):.2f}</b>\n\n"
         f"🟦 NORMAL: 4H → 1H → 15M\n"
         f"⚡ SCALP: 1H → 15M → 5M (BTC/ETH/GRAM)\n"
+        f"🔥 MICRO: 5M → 3M → 1M, hard exit ≤ {config.MICRO_MAX_HOLD_SECONDS//60} мин, demo only\n"
         f"🧠 AUTO: Tournament v5.1 — CHAMPION + малорисковый PROBATION по подтверждённой статистике\n"
         f"⏸ PAUSE: новые входы выключены, защита открытой позиции продолжает работать."
     )
@@ -141,7 +143,7 @@ def _switch(target,source="TELEGRAM"):
                 )
             return _send(f"⚠️ Режим не изменён: {chk.get('reason')}","MODES")
         strategy_mode.set_mode(target,changed_by=source)
-        icon="⚡" if target=="SCALP" else "🟦" if target=="NORMAL" else "🧠" if target=="AUTO" else "⏸"
+        icon="🔥" if target=="MICRO" else "⚡" if target=="SCALP" else "🟦" if target=="NORMAL" else "🧠" if target=="AUTO" else "⏸"
         return _send(f"{icon} <b>ASTRA {target} ACTIVATED</b>\n\nРежим сохранён в /data и переживёт Redeploy.","MODES")
 
 def handle_update(update):
@@ -202,7 +204,7 @@ def handle_update(update):
 
     _send(
         "Главное меню: 🎛 РЕЖИМЫ · 📊 МОНИТОРИНГ · 🧪 ОБУЧЕНИЕ · 🌐 РЫНКИ\n"
-        "Команды: /normal /scalp /auto /pause /status /cost /auto_stats "
+        "Команды: /normal /scalp /micro /auto /pause /status /cost /auto_stats "
         "/scalp_stats /tournament /trainer /lab /gold /defi /brain /learning",
         "MAIN"
     )

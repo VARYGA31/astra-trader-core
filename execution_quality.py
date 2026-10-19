@@ -25,10 +25,14 @@ def min_rr_for_mode(mode, scalp_tier=None):
         if str(scalp_tier or "PRIME").upper()=="FAST":
             return float(config.SCALP_FAST_MIN_TP1_R), float(config.SCALP_FAST_MIN_TP2_R)
         return float(config.SCALP_MIN_TP1_R), float(config.SCALP_MIN_TP2_R)
+    if mode=="MICRO":
+        return float(config.MICRO_MIN_TP1_R), float(config.MICRO_MIN_TP2_R)
     return float(config.MIN_TP1_R), float(config.MIN_TP2_R)
 
-def max_slippage_pct(asset):
+def max_slippage_pct(asset, mode="NORMAL"):
     asset=str(asset or "").upper()
+    if str(mode or "NORMAL").upper()=="MICRO":
+        return float(config.MICRO_MAX_ENTRY_SLIPPAGE_PCT)
     if asset=="XAU":
         return float(config.XAU_MAX_ENTRY_SLIPPAGE_PCT)
     if asset=="GRAM":
@@ -117,7 +121,7 @@ def raw_fok_limit(action, reference, stop, tp1, tp2, min_tp1_r, min_tp2_r, max_a
 def build_entry_guard(asset, action, reference, stop, tp1, tp2, mode="NORMAL", scalp_tier=None):
     r1,r2=min_rr_for_mode(mode,scalp_tier)
     audit=audit_price(action,reference,stop,tp1,tp2,r1,r2)
-    slip=max_slippage_pct(asset)
+    slip=max_slippage_pct(asset,mode)
     out={
         "asset":str(asset).upper(),
         "action":str(action).upper(),
@@ -146,7 +150,7 @@ def audit_fill(asset, action, reference, fill, stop, tp1, tp2, mode="NORMAL", sc
     r1,r2=min_rr_for_mode(mode,scalp_tier)
     rr_audit=audit_price(action,fill,stop,tp1,tp2,r1,r2)
     adverse=adverse_slippage_pct(action,reference,fill)
-    maximum=max_slippage_pct(asset)
+    maximum=max_slippage_pct(asset,mode)
     slip_ok=(adverse is not None and adverse<=maximum+1e-12)
     return {
         "passed":bool(rr_audit.get("passed") and slip_ok),

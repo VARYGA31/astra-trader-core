@@ -178,10 +178,13 @@ def _okx_confirmed_candles(inst, bar, limit=300):
             continue
     return rows
 
-def okx_multi_timeframe(inst):
+def okx_multi_timeframe(inst, include_micro=False):
     frames={}
     errors=[]
-    for name,bar in (("5m","5m"),("15m","15m"),("1h","1H"),("4h","4H")):
+    pairs=[("5m","5m"),("15m","15m"),("1h","1H"),("4h","4H")]
+    if include_micro:
+        pairs=[("1m","1m"),("3m","3m")]+pairs
+    for name,bar in pairs:
         try:
             rows=_okx_confirmed_candles(inst,bar,300)
             frames[name]=_tf_features(rows,name)
@@ -189,8 +192,9 @@ def okx_multi_timeframe(inst):
             frames[name]={"status":"FAILED","timeframe":name,"error":str(e)}
             errors.append(f"{name}:{e}")
     ok=sum(1 for x in frames.values() if x.get("status")=="OK")
+    expected=len(pairs)
     return {
-        "status":"OK" if ok==4 else "PARTIAL" if ok else "FAILED",
+        "status":"OK" if ok==expected else "PARTIAL" if ok else "FAILED",
         "source":"OKX_SWAP_CONFIRMED_CANDLES",
         "frames":frames,
         "errors":errors,
@@ -342,7 +346,7 @@ def okx_spot_price(inst):
     if not d: raise RuntimeError("OKX spot ticker empty")
     return float(d[0]["last"])
 
-def snapshot(asset):
+def snapshot(asset, include_micro=False):
     if asset not in ASSETS:
         return {"status":"TRADE_NOT_ALLOWED","requested_asset":asset,"allowed_assets":list(ASSETS)}
 
@@ -379,7 +383,7 @@ def snapshot(asset):
                 errors.append("okx_spot:"+str(e2))
 
     perp=okx_swap(cfg["okx_swap"])
-    mtf=okx_multi_timeframe(cfg["okx_swap"])
+    mtf=okx_multi_timeframe(cfg["okx_swap"],include_micro=include_micro)
     gmacro=gold_macro.snapshot() if asset=="XAU" else None
 
     quality="OK" if spot and spot.get("price") and mtf.get("status")!="FAILED" else "FAILED"

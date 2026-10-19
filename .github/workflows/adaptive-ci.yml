@@ -45,6 +45,8 @@ jobs:
         run: python test_final_decision_calibration.py
       - name: SCALP v2 regression
         run: python test_scalp_v2.py
+      - name: MICRO v1 regression
+        run: python test_micro_mode.py
       - name: Observability regression
         run: python test_observability.py
       - name: Transition regression
