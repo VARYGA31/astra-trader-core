@@ -93,7 +93,7 @@ def _compact(p):
     for e in n.get("events",[])[:config.MAX_MODEL_NEWS_EVENTS]:
         ev.append({k:e.get(k) for k in ("id","source","verification_status","published_at_utc","title","event_type","impact_hint","trade_usable")})
     policy={
-        "version":"scalp_v2" if mode=="SCALP" else "normal_cal_v1",
+        "version":"micro_v1" if mode=="MICRO" else "scalp_v2" if mode=="SCALP" else "normal_cal_v1",
         "strategy_mode":mode,
         "normal_min_trade_confidence":config.MIN_TRADE_CONFIDENCE,
         "transition_min_trade_confidence":config.MTF_TRANSITION_MIN_CONFIDENCE,
