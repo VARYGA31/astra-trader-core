@@ -33,6 +33,8 @@ jobs:
         run: python test_multi_market_trainer_v3.py
       - name: Execution v4 regression
         run: python test_auto_execution_v4.py
+      - name: Execution v4.1 FOK regression
+        run: python test_execution_v4_1_fok.py
       - name: Strategy Tournament v5 regression
         run: python test_strategy_tournament_v5.py
       - name: Telegram mode pure test
