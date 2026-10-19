@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime,timezone
 import config
 import news_snapshot
+import news_cache
 
 STATE=Path(config.STATE_DIR)/"news_seen.json"
 
@@ -19,6 +20,7 @@ def poll_once(hours=2):
     seen=load_seen();new=[];health={}
     for asset in config.ALLOWED_ASSETS:
         s=news_snapshot.snapshot(asset,hours);health[asset]=s.get("summary",{})
+        news_cache.put(asset,s)
         for e in s.get("events",[]):
             k=asset+":"+e["id"]
             if k not in seen:
