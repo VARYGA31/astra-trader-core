@@ -51,6 +51,8 @@ jobs:
         run: python test_micro_mode.py
       - name: MICRO v2 profitability regression
         run: python test_micro_v2.py
+      - name: MICRO-100 scorecard regression
+        run: python test_micro_scorecard.py
       - name: Pure guard/config regressions
         run: |
           python test_no_null_bytes.py
