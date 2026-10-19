@@ -4,7 +4,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 import config, cooldown, decision_context, paper_execution, risk_engine, decision_gate, mtf_gate, performance_guard
-import strategy_mode, scalp_gate
+import strategy_mode, scalp_gate, micro_gate
 from okx_demo_adapter import OKXDemoAdapter
 import execution_router
 import demo_ledger
@@ -94,7 +94,7 @@ def prepare(asset,hours=12,strategy_mode_name=None):
         "asset":asset,
         "decision_context":c,
         "execution_mode":config.EXECUTION_MODE,
-        "timeframe":"5m" if active_mode in {"SCALP","AUTO"} else config.TRADING_TIMEFRAME,
+        "timeframe":"1m" if active_mode=="MICRO" else "5m" if active_mode in {"SCALP","AUTO"} else config.TRADING_TIMEFRAME,
         "strategy_mode":active_mode,
         "account_state":s,
         "guards":guards,
@@ -133,7 +133,7 @@ def execute(decision):
     adaptive_active = bool(decision.get("adaptive_mode")) and active_mode=="AUTO"
     if not adaptive_active and decision_mode!=active_mode:
         return {"status":"REJECTED","reason":"MODE_CHANGED_BEFORE_EXECUTION","decision_mode":decision_mode,"active_mode":active_mode}
-    decision["timeframe"] = decision.get("timeframe") or ("5m" if decision_mode=="SCALP" else config.TRADING_TIMEFRAME)
+    decision["timeframe"] = decision.get("timeframe") or ("1m" if decision_mode=="MICRO" else "5m" if decision_mode=="SCALP" else config.TRADING_TIMEFRAME)
     p = prepare(asset,12,decision_mode)
     g = p["guards"]
 
@@ -165,7 +165,11 @@ def execute(decision):
     # AUTO/ADAPTIVE deliberately does not: the model saw the full market package
     # and selected the strategy. Python still keeps hard anti-chase, spread,
     # risk, exposure, R:R and execution-quality protections.
-    if decision_mode=="SCALP":
+    if decision_mode=="MICRO":
+        mtf=micro_gate.evaluate(p)
+        mtf_reject_reason="MICRO_NOT_ALIGNED_AT_EXECUTION"
+        chase=micro_gate.entry_guard(p,action)
+    elif decision_mode=="SCALP":
         mtf=scalp_gate.evaluate(p)
         mtf_reject_reason="SCALP_NOT_ALIGNED_AT_EXECUTION"
         chase=scalp_gate.entry_guard(p,action)
@@ -264,7 +268,7 @@ def execute(decision):
         decision["mtf_mode"]="SCALP" if decision_mode=="SCALP" else "NORMAL"
     else:
         decision["mtf_quality"]=mtf.get("quality")
-        decision["mtf_mode"]="SCALP" if decision_mode=="SCALP" else (mtf.get("mode") or "NORMAL")
+        decision["mtf_mode"]="MICRO" if decision_mode=="MICRO" else "SCALP" if decision_mode=="SCALP" else (mtf.get("mode") or "NORMAL")
     if decision_mode=="SCALP":
         decision["scalp_tier"]=(decision.get("scalp_tier") or mtf.get("tier") or "FAST") if adaptive_active else (mtf.get("tier") or decision.get("scalp_tier") or "PRIME")
     decision["mtf_gate"]=mtf
