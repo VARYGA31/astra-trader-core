@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from datetime import datetime,timezone
 
 import config,news_listener,position_monitor,trade_cycle,paper_execution,execution_router,decision_gate,observability
-import strategy_mode,scalp_decision_gate,micro_decision_gate,telegram_control,scalp_stats
+import strategy_mode,scalp_decision_gate,micro_decision_gate,telegram_control,scalp_stats,micro_stats,micro_market_stream
 import adaptive_engine,adaptive_memory,adaptive_cost,adaptive_stats,adaptive_trainer,multi_market_trainer,strategy_tournament
 import position_exit_guard
 from astra_client import decide
@@ -14,6 +14,8 @@ R={
     "started_at_utc":datetime.now(timezone.utc).isoformat(),
     "last_error":None,
     "execution_mode":config.EXECUTION_MODE,
+    "decision_engine_enabled":bool(config.AUTO_DECISION),
+    "trade_execution_enabled":bool(config.AUTO_PAPER_EXECUTION),
     "last_news":None,
     "last_position_check":None,
     "last_exit_check":None,
@@ -33,6 +35,8 @@ R={
     "strategy_mode":strategy_mode.status(),
     "telegram_control":telegram_control.STATE,
     "scalp_stats_6h":scalp_stats.summary(6),
+    "micro_stats_6h":micro_stats.summary(6),
+    "micro_stream":micro_market_stream.health(),
     "adaptive_brain":adaptive_memory.load_brain(),
     "adaptive_learning_7d":adaptive_memory.summary(168),
     "adaptive_cost_today":adaptive_cost.usage_today(),
@@ -53,6 +57,10 @@ def refresh_observability():
         started=o.get("started_at_utc")
         R["performance"]=observability.trade_performance(started)
         R["scalp_stats_6h"]=scalp_stats.summary(6)
+        R["micro_stats_6h"]=micro_stats.summary(6)
+        R["micro_stream"]=micro_market_stream.health()
+        R["decision_engine_enabled"]=bool(config.AUTO_DECISION)
+        R["trade_execution_enabled"]=bool(config.AUTO_PAPER_EXECUTION)
         R["adaptive_brain"]=adaptive_memory.load_brain()
         R["adaptive_learning_7d"]=adaptive_memory.summary(168)
         R["adaptive_cost_today"]=adaptive_cost.usage_today()
@@ -113,6 +121,8 @@ def main():
             if mode!=last_mode:
                 last_decision={a:0 for a in config.ALLOWED_ASSETS}
                 last_mode=mode
+                if mode=="MICRO":
+                    micro_market_stream.ensure_started()
             R["strategy_mode"]=strategy_mode.status()
             R["telegram_control"]=dict(telegram_control.STATE)
             high=set()
@@ -253,6 +263,8 @@ def main():
                             observability.record_decision(p,gate,d,x,model_called=bool(gate.get("call_model")))
                             if mode=="SCALP":
                                 scalp_stats.record(p,gate,d,x,model_called=bool(gate.get("call_model")))
+                            elif mode=="MICRO":
+                                micro_stats.record(p,gate,d,x,model_called=bool(gate.get("call_model")))
                             refresh_observability()
                             last_decision[a]=t
 
