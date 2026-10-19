@@ -8,7 +8,7 @@ PAUSED is always allowed and stops only new entries.
 import json,time
 from pathlib import Path
 import requests
-import config,strategy_mode,telegram_notifier,demo_ledger,scalp_stats,adaptive_memory,adaptive_cost,adaptive_stats,adaptive_trainer,multi_market_trainer,strategy_tournament
+import config,strategy_mode,telegram_notifier,demo_ledger,scalp_stats,micro_stats,adaptive_memory,adaptive_cost,adaptive_stats,adaptive_trainer,multi_market_trainer,strategy_tournament
 from okx_demo_adapter import OKXDemoAdapter
 
 API="https://api.telegram.org"
@@ -27,6 +27,7 @@ def keyboard(section="MAIN"):
         rows=[
             [{"text":"📊 STATUS"},{"text":"💰 COST"}],
             [{"text":"📊 AUTO STATS"},{"text":"📈 SCALP STATS"}],
+            [{"text":"🔥 MICRO STATS"}],
             [{"text":"⬅️ ГЛАВНАЯ"}],
         ]
     elif section=="LEARNING":
@@ -74,18 +75,20 @@ def _summary():
     except Exception as e: ex={"open_positions":None,"error":str(e)}
     try: ledger=demo_ledger.status()
     except Exception: ledger={}
-    auto="ON" if config.AUTO_DECISION else "OFF"
+    brain="ON" if config.AUTO_DECISION else "OFF"
+    execute="ON" if config.AUTO_PAPER_EXECUTION else "OFF"
     icon="🔥" if mode=="MICRO" else "⚡" if mode=="SCALP" else "🟦" if mode=="NORMAL" else "🧠" if mode=="AUTO" else "⏸"
     return (
         f"🎛 <b>ASTRA CONTROL</b>\n\n"
         f"Активный режим: {icon} <b>{mode}</b>\n"
-        f"AUTO_DECISION: <b>{auto}</b>\n"
-        f"Execution: <b>{config.EXECUTION_MODE}</b>\n"
+        f"Decision engine: <b>{brain}</b>\n"
+        f"Trade execution: <b>{execute}</b>\n"
+        f"Execution target: <b>{config.EXECUTION_MODE}</b>\n"
         f"Открытых позиций: <b>{ex.get('open_positions','—')}</b>\n"
         f"Demo equity: <b>${float(ledger.get('equity') or 0):.2f}</b>\n\n"
         f"🟦 NORMAL: 4H → 1H → 15M\n"
         f"⚡ SCALP: 1H → 15M → 5M (BTC/ETH/GRAM)\n"
-        f"🔥 MICRO: 5M → 3M → 1M, hard exit ≤ {config.MICRO_MAX_HOLD_SECONDS//60} мин, demo only\n"
+        f"🔥 MICRO v2: 5M → 3M → 1M, OKX-native flow, NET-edge gate, hard exit ≤ {config.MICRO_MAX_HOLD_SECONDS//60} мин\n"
         f"🧠 AUTO: Tournament v5.1 — CHAMPION + малорисковый PROBATION по подтверждённой статистике\n"
         f"⏸ PAUSE: новые входы выключены, защита открытой позиции продолжает работать."
     )
@@ -179,6 +182,8 @@ def handle_update(update):
         _send(_summary(),"MONITOR"); return {"status":"OK","action":"STATUS"}
     if lower in {"/scalp_stats","/scalpstats"} or upper=="📈 SCALP STATS":
         _send(_scalp_stats_text(6),"MONITOR"); return {"status":"OK","action":"SCALP_STATS"}
+    if lower in {"/micro_stats","/microstats"} or upper=="🔥 MICRO STATS":
+        _send(micro_stats.telegram_text(6),"MONITOR"); return {"status":"OK","action":"MICRO_STATS"}
     if lower in {"/brain","/astra_brain"} or upper=="🧠 BRAIN":
         _send(adaptive_memory.brain_text(),"LEARNING"); return {"status":"OK","action":"BRAIN"}
     if lower in {"/learning","/learn"} or upper=="🎓 LEARNING":
@@ -205,7 +210,7 @@ def handle_update(update):
     _send(
         "Главное меню: 🎛 РЕЖИМЫ · 📊 МОНИТОРИНГ · 🧪 ОБУЧЕНИЕ · 🌐 РЫНКИ\n"
         "Команды: /normal /scalp /micro /auto /pause /status /cost /auto_stats "
-        "/scalp_stats /tournament /trainer /lab /gold /defi /brain /learning",
+        "/scalp_stats /micro_stats /tournament /trainer /lab /gold /defi /brain /learning",
         "MAIN"
     )
     return {"status":"OK","action":"HELP"}
