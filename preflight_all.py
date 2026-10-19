@@ -9,9 +9,10 @@ def offline():
     import paper_execution,risk_engine,cooldown,trade_journal,news_verifier
     assert paper_execution.init_state(100,True)["status"]=="INITIALIZED"
     r=risk_engine.evaluate({"asset":"BTC","action":"LONG","equity":100,"initial_equity":100,"daily_pnl":0,"open_positions":0,
-        "current_exposure_usd":0,"entry":100,"stop_loss":98,"confidence":80,"data_quality":"OK","critical_news_verified":True,
+        "current_exposure_usd":0,"entry":100,"stop_loss":98,"take_profit_1":102.4,"take_profit_2":104.0,
+        "confidence":80,"mtf_quality":80,"data_quality":"OK","critical_news_verified":True,
         "volatility_regime":"NORMAL","leverage":5})
-    assert r["status"]=="APPROVED";r["take_profit_1"]=104;r["take_profit_2"]=108
+    assert r["status"]=="APPROVED"
     p=Path(td)/"risk.json";p.write_text(json.dumps(r),encoding="utf-8")
     op=paper_execution.open_position(p);pid=op["position"]["id"];assert op["status"]=="PAPER_OPENED"
     assert paper_execution.partial_close(pid,104,.5,"TAKE_PROFIT_1")["status"]=="PAPER_PARTIAL_CLOSE"
@@ -19,7 +20,8 @@ def offline():
     assert cooldown.set_cooldown("BTC",60,"TEST")["active"]
     assert trade_journal.summary()["overall"]["trades"]==1
     h=risk_engine.evaluate({"asset":"BTC","action":"LONG","equity":75,"initial_equity":100,"daily_pnl":0,"open_positions":0,
-        "current_exposure_usd":0,"entry":100,"stop_loss":98,"confidence":80,"data_quality":"OK","critical_news_verified":True,
+        "current_exposure_usd":0,"entry":100,"stop_loss":98,"take_profit_1":102.4,"take_profit_2":104.0,
+        "confidence":80,"mtf_quality":80,"data_quality":"OK","critical_news_verified":True,
         "volatility_regime":"NORMAL","leverage":5})
     assert h["reason"]=="MAX_DRAWDOWN_REACHED"
     ev=[{"title":"Major exchange hacked","source_id":"telegram_markettwits","verification_status":"DISCOVERY_ONLY","impact_hint":"HIGH"},
