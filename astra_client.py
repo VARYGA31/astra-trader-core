@@ -28,12 +28,14 @@ ASTRA SCALP v2 FINAL DECISION POLICY:
 """
 
 MICRO_POLICY = """
-ASTRA MICRO v1 FINAL DECISION POLICY:
+ASTRA MICRO v2 FINAL DECISION POLICY:
 - This is a demo-only 1-5 minute micro-scalp. The Python gate already performed 5M context -> 3M setup -> 1M trigger filtering.
 - Use only model_gate.allowed_direction. Do not reverse the deterministic direction.
 - Prefer action over hesitation only when the supplied 1M/3M structure remains intact and spread/liquidity are suitable.
 - The trade is expected to resolve quickly. Stop must be a real microstructure invalidation, not an arbitrary ultra-tight number.
 - Targets must satisfy the supplied MICRO minimum R:R and remain plausible inside a few minutes.
+- MICRO execution is fee-aware. Do not invent an ultra-tight stop/target geometry that would be consumed by round-trip fees/slippage; respect the supplied NET-R requirements.
+- Prefer OKX-native microstructure in market.spot when microstructure_source is present.
 - WAIT only for a concrete blocker visible in the supplied data: CHASE_RISK, STRUCTURE_CONFLICT, NEWS_RISK, VOLATILITY_RISK, LIQUIDITY_SPREAD_RISK, RR_OR_STOP_INVALID, REVERSAL_RISK, or DATA_QUALITY.
 - Never increase size or leverage. Python owns risk, notional, leverage and the 5-minute hard time stop.
 """
@@ -93,7 +95,7 @@ def _compact(p):
     for e in n.get("events",[])[:config.MAX_MODEL_NEWS_EVENTS]:
         ev.append({k:e.get(k) for k in ("id","source","verification_status","published_at_utc","title","event_type","impact_hint","trade_usable")})
     policy={
-        "version":"micro_v1" if mode=="MICRO" else "scalp_v2" if mode=="SCALP" else "normal_cal_v1",
+        "version":"micro_v2" if mode=="MICRO" else "scalp_v2" if mode=="SCALP" else "normal_cal_v1",
         "strategy_mode":mode,
         "normal_min_trade_confidence":config.MIN_TRADE_CONFIDENCE,
         "transition_min_trade_confidence":config.MTF_TRANSITION_MIN_CONFIDENCE,
@@ -108,6 +110,10 @@ def _compact(p):
         "micro_min_quality":config.MICRO_MIN_QUALITY,
         "micro_min_tp1_r":config.MICRO_MIN_TP1_R,
         "micro_min_tp2_r":config.MICRO_MIN_TP2_R,
+        "micro_min_net_tp1_r":config.MICRO_MIN_NET_TP1_R,
+        "micro_min_net_tp2_r":config.MICRO_MIN_NET_TP2_R,
+        "micro_max_roundtrip_cost_r":config.MICRO_MAX_ROUNDTRIP_COST_R,
+        "micro_fallback_roundtrip_cost_pct":2.0*(config.MICRO_FALLBACK_TAKER_FEE_PCT_PER_SIDE+config.MICRO_ESTIMATED_SLIPPAGE_PCT_PER_SIDE),
         "micro_max_hold_seconds":config.MICRO_MAX_HOLD_SECONDS,
         "wait_requires_concrete_blocker":True,
     }
@@ -146,7 +152,7 @@ def _normalize_decision(d,package):
     d["timeframe"]=d.get("timeframe") or package.get("timeframe") or ("1m" if mode=="MICRO" else "5m" if mode=="SCALP" else config.TRADING_TIMEFRAME)
     d["strategy_mode"]=mode
     d["setup_type"]=str(d.get("setup_type","NONE")).upper()
-    d["decision_policy_version"]="micro_v1" if mode=="MICRO" else "scalp_v2" if mode=="SCALP" else "normal_cal_v1"
+    d["decision_policy_version"]="micro_v2" if mode=="MICRO" else "scalp_v2" if mode=="SCALP" else "normal_cal_v1"
     if mode=="SCALP":
         d["scalp_tier"]=str(package.get("model_gate",{}).get("scalp_tier") or package.get("model_gate",{}).get("mtf",{}).get("tier") or "PRIME").upper()
     cat=str(d.get("wait_category") or "NONE").upper().strip()
