@@ -2,13 +2,27 @@
 
 Current target exchange: **OKX Demo Trading**. Live trading is intentionally not implemented.
 
-## Runtime modes
+## Tradable runtime modes
 
-- **NORMAL** — 4H → 1H → 15M
-- **SCALP** — 1H → 15M → 5M
+ASTRA intentionally has only two trading strategies:
+
+- **NORMAL** — ordinary ASTRA, 4H → 1H → 15M
 - **MICRO v2** — 5M → 3M → 1M, OKX-native order flow, fee-aware NET-edge gate, hard 5-minute exit
-- **AUTO** — Trainer + Strategy Tournament final selection
-- **PAUSED** — blocks new entries; position protection remains active
+
+`PAUSED` is a technical safety state: it blocks new entries while monitoring and exchange-side protection continue.
+
+**SCALP and AUTO are retired as tradable runtime modes.** A persisted legacy SCALP/AUTO state is automatically migrated to NORMAL after deployment.
+
+## Learning stays alive
+
+Adaptive Trainer and Strategy Tournament remain available as a **shadow-only crypto lab**. They build/evaluate hypothetical candidates and empirical strategy evidence, but the lab:
+
+- does not call ASTRA for trading decisions;
+- has no order-routing capability;
+- cannot switch the active trading mode;
+- runs independently from NORMAL/MICRO execution.
+
+Gold and DeFi laboratories also remain shadow-only.
 
 ## Safety and execution
 
@@ -22,17 +36,15 @@ Current target exchange: **OKX Demo Trading**. Live trading is intentionally not
 - Telegram mode control and diagnostics
 - actual OKX `realizedPnl` is used for closed-trade NET performance
 
-## MICRO v2
-
-MICRO uses OKX WebSocket `books5` + `trades` when fresh, with an OKX REST fallback. It reads the account trading fee when available and rejects geometry whose expected TP is consumed by estimated round-trip fee/slippage.
-
-Useful Telegram commands:
+## Useful Telegram commands
 
 - `/status`
+- `/normal`
 - `/micro`
+- `/pause`
 - `/micro_stats`
-- `/scalp_stats`
-- `/auto_stats`
+- `/shadow`
+- `/trainer`
 - `/tournament`
 
 Safe defaults remain:
