@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 import sys,json
 from datetime import datetime,timezone
-import config,market_snapshot,news_snapshot
+import config,market_snapshot,news_snapshot,news_cache
 
 def build(asset,hours=12,include_micro=False):
     if asset not in config.ALLOWED_ASSETS:
         return {"status":"TRADE_NOT_ALLOWED"}
 
     m=market_snapshot.snapshot(asset,include_micro=include_micro)
-    n=news_snapshot.snapshot(asset,hours)
+    n=news_cache.get(asset,config.NEWS_CACHE_MAX_AGE_SECONDS)
+    if n is None:
+        n=news_snapshot.snapshot(asset,hours)
+        news_cache.put(asset,n)
 
     guards={
         "market_ok":m.get("data_quality",{}).get("status")!="FAILED",
