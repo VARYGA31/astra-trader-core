@@ -35,6 +35,8 @@ def max_slippage_pct(asset, mode="NORMAL"):
         return float(config.MICRO_MAX_ENTRY_SLIPPAGE_PCT)
     if asset=="XAU":
         return float(config.XAU_MAX_ENTRY_SLIPPAGE_PCT)
+    if asset in set(config.DEFI_TRADE_WATCHLIST):
+        return float(config.DEFI_MAX_ENTRY_SLIPPAGE_PCT)
     if asset=="GRAM":
         return float(config.GRAM_MAX_ENTRY_SLIPPAGE_PCT)
     return float(config.CRYPTO_MAX_ENTRY_SLIPPAGE_PCT)
