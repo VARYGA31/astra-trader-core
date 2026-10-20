@@ -14,6 +14,7 @@ import config
 from asset_map import ASSETS
 
 _FEE_CACHE = {}
+_ACCOUNT_INSTRUMENT_CACHE = {}
 
 class OKXAPIError(RuntimeError):
     pass
@@ -107,6 +108,51 @@ class OKXDemoAdapter:
         if x.get("state") != "live":
             raise RuntimeError(f"OKX_INSTRUMENT_NOT_LIVE:{inst}:{x.get('state')}")
         return x
+
+    def account_instrument(self, asset):
+        """Return this SWAP only if it is available to the authenticated demo account."""
+        now=time.time()
+        cached=_ACCOUNT_INSTRUMENT_CACHE.get("SWAP")
+        if not cached or now-cached["at"]>float(config.OKX_ACCOUNT_INSTRUMENT_CACHE_SECONDS):
+            rows=self.private_get("/api/v5/account/instruments",{"instType":"SWAP"}).get("data",[])
+            _ACCOUNT_INSTRUMENT_CACHE["SWAP"]={"at":now,"rows":rows}
+        else:
+            rows=cached["rows"]
+        target=self.inst_id(asset)
+        return next((x for x in rows if str(x.get("instId") or "")==target),None)
+
+    def account_tradability(self, asset):
+        """Safe account-specific tradability probe used before any order submission."""
+        try:
+            public=self.instrument(asset)
+        except Exception as e:
+            return {
+                "available":False,"reason":"PUBLIC_INSTRUMENT_UNAVAILABLE",
+                "instrument":self.inst_id(asset),"error":str(e)[:500],
+            }
+        try:
+            account=self.account_instrument(asset)
+        except Exception as e:
+            return {
+                "available":False,"reason":"ACCOUNT_INSTRUMENT_LOOKUP_FAILED",
+                "instrument":self.inst_id(asset),
+                "public_state":public.get("state"),
+                "error_type":type(e).__name__,
+                "error":str(e)[:500],
+            }
+        if not account:
+            return {
+                "available":False,"reason":"ACCOUNT_INSTRUMENT_UNAVAILABLE",
+                "instrument":self.inst_id(asset),
+                "public_state":public.get("state"),
+            }
+        return {
+            "available":True,"reason":"OK",
+            "instrument":self.inst_id(asset),
+            "public_state":public.get("state"),
+            "account_state":account.get("state"),
+            "group_id":account.get("groupId"),
+        }
 
     def ticker_row(self, asset):
         inst = self.inst_id(asset)
