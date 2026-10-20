@@ -55,6 +55,8 @@ jobs:
         run: python test_micro_v2.py
       - name: MICRO second-position shadow regression
         run: python test_micro_second_shadow.py
+      - name: NORMAL Gold + DeFi trading regression
+        run: python test_extended_markets.py
       - name: Pure guard/config regressions
         run: |
           python test_no_null_bytes.py

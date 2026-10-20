@@ -2,6 +2,7 @@
 import sys,json,config
 
 ALLOWED=set(config.ALLOWED_ASSETS)
+DEFI=set(config.DEFI_TRADE_WATCHLIST)
 
 def reject(reason,extra=None):
     x={"status":"REJECTED","reason":reason}
@@ -80,6 +81,14 @@ def _leverage(asset, volatility, quality, confidence, stop_dist_pct, strategy_mo
             lev=config.SCALP_LEVERAGE_NORMAL
         return min(max(float(lev),1.0),float(config.SCALP_MAX_LEVERAGE))
 
+    if asset in DEFI:
+        # DeFi is allowed only with conservative margin leverage.
+        if v in {"ELEVATED","HIGH","EXTREME"}:
+            lev=min(float(config.LEVERAGE_HIGH_VOL),float(config.DEFI_TRADE_MAX_LEVERAGE))
+        else:
+            lev=min(float(config.LEVERAGE_NORMAL),float(config.DEFI_TRADE_MAX_LEVERAGE))
+        return max(1.0,float(lev))
+
     if asset=="XAU":
         # User-requested 5x..10x range for gold only.
         # Higher leverage does NOT enlarge the stop-risk budget.
@@ -152,10 +161,12 @@ def evaluate(d):
         if mtf_quality<min_quality:
             return reject("SCALP_QUALITY_TOO_LOW",{"mtf_quality":mtf_quality,"minimum":min_quality,"scalp_tier":scalp_tier})
     elif is_transition:
-        # Transition mode is crypto-only and deliberately stricter on model
-        # confidence while using a smaller deterministic risk budget.
+        # Transition mode is kept away from XAU and DeFi. Extended markets
+        # require the full NORMAL alignment until they build their own evidence.
         if asset=="XAU":
             return reject("XAU_TRANSITION_NOT_ALLOWED")
+        if asset in DEFI:
+            return reject("DEFI_TRANSITION_NOT_ALLOWED")
         if confidence<config.MTF_TRANSITION_MIN_CONFIDENCE:
             return reject("TRANSITION_CONFIDENCE_TOO_LOW",{
                 "confidence":confidence,
@@ -167,12 +178,15 @@ def evaluate(d):
                 "minimum":config.MTF_TRANSITION_MIN_QUALITY,
             })
     else:
-        min_conf=config.XAU_MIN_TRADE_CONFIDENCE if asset=="XAU" else config.MIN_TRADE_CONFIDENCE
-        min_mtf=(
-            config.XAU_MTF_MIN_QUALITY
-            if asset=="XAU"
-            else max(config.MTF_MIN_QUALITY,config.MIN_TRADE_CONFIDENCE)
-        )
+        if asset=="XAU":
+            min_conf=config.XAU_MIN_TRADE_CONFIDENCE
+            min_mtf=config.XAU_MTF_MIN_QUALITY
+        elif asset in DEFI:
+            min_conf=config.DEFI_TRADE_MIN_CONFIDENCE
+            min_mtf=config.DEFI_TRADE_MIN_QUALITY
+        else:
+            min_conf=config.MIN_TRADE_CONFIDENCE
+            min_mtf=max(config.MTF_MIN_QUALITY,config.MIN_TRADE_CONFIDENCE)
         if confidence<min_conf:
             return reject("CONFIDENCE_TOO_LOW",{"confidence":confidence,"minimum":min_conf})
         if mtf_quality<min_mtf:
@@ -251,6 +265,8 @@ def evaluate(d):
         risk_pct,quality=_risk_pct(confidence,mtf_quality,dd_mult)
         if risk_pct is None:
             return reject("TRADE_QUALITY_TOO_LOW",{"quality":quality})
+        if asset in DEFI:
+            risk_pct=min(float(risk_pct),float(config.DEFI_TRADE_HARD_RISK_PCT))
 
     risk_multiplier=float(d.get("tournament_risk_multiplier") or 1.0)
     risk_multiplier=max(0.10,min(1.0,risk_multiplier))

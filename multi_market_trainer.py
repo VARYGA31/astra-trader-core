@@ -523,7 +523,7 @@ def gold_text(hours=168):
         f"XAU NET R: <b>{x.get('avg_net_r',g.get('avg_net_r',0)):.3f}R</b>",
         f"Gross / friction: <b>{g.get('avg_gross_r',0):.3f}R / {g.get('avg_cost_r',0):.3f}R</b>",
         f"TP2: <b>{labels.get('TP2_HIT',0)}</b> | Stops: <b>{labels.get('STOP_HIT',0)}</b>","",
-        "Gold сейчас shadow-only в Trainer v3: наблюдает XAU, macro/yields и новости, но из AUTO ордера не открывает.",
+        "Gold Trainer остаётся shadow-only. Отдельно NORMAL может торговать XAU через основной Risk/Execution pipeline, если инструмент доступен OKX Demo аккаунту.",
     ])
 
 def defi_text(hours=168):
@@ -542,7 +542,7 @@ def defi_text(hours=168):
         if a in set(config.DEFI_LAB_WATCHLIST):
             lines.append(f"• {a}: {v.get('samples',0)} | {v.get('avg_net_r',0):.3f}R");shown+=1
     if not shown:lines.append("• пока недостаточно оценённых исходов")
-    lines += ["","DeFi сейчас shadow-only. Protocol security events блокируют новые тренировочные кандидаты."]
+    lines += ["","DeFi Trainer остаётся shadow-only. Отдельно NORMAL может торговать динамическим top-N DeFi universe; protocol-security и spread guards применяются до модели."]
     return "\n".join(lines)
 
 def telegram_text(hours=168):
@@ -570,7 +570,7 @@ def telegram_text(hours=168):
     if not shown:lines.append("• пока недостаточно оценённых исходов")
     lines += [
         "",
-        "Gold и DeFi здесь только обучаются: ордера не открываются.",
+        "Этот экран — только shadow-обучение; торговля Gold/DeFi в NORMAL идёт отдельным основным pipeline.",
         "v4 считает только новую cost-aware геометрию; старая статистика сохранена отдельно.",
         "NET R учитывает оценку fees + spread + slippage + funding.",
     ]

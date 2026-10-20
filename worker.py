@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from datetime import datetime,timezone
 
 import config,news_listener,position_monitor,trade_cycle,paper_execution,execution_router,decision_gate,observability
-import strategy_mode,micro_decision_gate,telegram_control,micro_stats,micro_market_stream,micro_second_shadow,crypto_shadow_lab
+import strategy_mode,micro_decision_gate,telegram_control,micro_stats,micro_market_stream,micro_second_shadow,crypto_shadow_lab,trade_universe
 import adaptive_memory,adaptive_cost,adaptive_trainer,multi_market_trainer,strategy_tournament
 import position_exit_guard
 from astra_client import decide
@@ -86,6 +86,7 @@ def _heartbeat(mode):
                 "avg_r":overall.get("avg_r"),
             },
             "shadow_lab_status":crypto_shadow_lab.STATE.get("status"),
+            "trade_universe":trade_universe.summary(),
         }
         print(json.dumps(payload,ensure_ascii=False,separators=(",",":")),flush=True)
     except Exception as e:
@@ -182,7 +183,7 @@ def main():
 
             if t-last_news>=config.NEWS_POLL_SECONDS:
                 stage="news_poll"
-                news_assets=config.MICRO_ALLOWED_ASSETS if mode=="MICRO" else config.ALLOWED_ASSETS
+                news_assets=trade_universe.assets_for_mode(mode)
                 n=news_listener.poll_once(2,news_assets)
                 R["last_news"]=n
                 last_news=t
@@ -226,7 +227,7 @@ def main():
 
             # Only two tradable strategies exist now: NORMAL and MICRO.
             if config.AUTO_DECISION and mode!="PAUSED":
-                assets=config.MICRO_ALLOWED_ASSETS if mode=="MICRO" else config.ALLOWED_ASSETS
+                assets=trade_universe.assets_for_mode(mode)
                 interval=config.MICRO_DECISION_INTERVAL_SECONDS if mode=="MICRO" else config.DECISION_INTERVAL_SECONDS
                 gate_module=micro_decision_gate if mode=="MICRO" else decision_gate
 

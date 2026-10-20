@@ -1,5 +1,10 @@
 import os
-ALLOWED_ASSETS=("BTC","ETH","GRAM","XAU")
+
+# Superset of every instrument the execution/risk layers know how to handle.
+# NORMAL dynamically chooses a smaller active universe from this set.
+NORMAL_CORE_ASSETS=("BTC","ETH","GRAM")
+DEFI_TRADE_WATCHLIST=("AAVE","UNI","LDO","PENDLE","CRV","MORPHO")
+ALLOWED_ASSETS=NORMAL_CORE_ASSETS+DEFI_TRADE_WATCHLIST+("XAU",)
 STATE_DIR=os.getenv("STATE_DIR","/workspace/data")
 INITIAL_EQUITY=float(os.getenv("INITIAL_EQUITY","100"))
 NORMAL_POSITION_PCT=float(os.getenv("NORMAL_POSITION_PCT","0.10"))
@@ -119,6 +124,22 @@ XAU_MAX_LEVERAGE = float(os.getenv("XAU_MAX_LEVERAGE", "10"))
 XAU_BEST_SETUP_MIN_QUALITY = float(os.getenv("XAU_BEST_SETUP_MIN_QUALITY", "92"))
 XAU_BEST_SETUP_MIN_CONFIDENCE = float(os.getenv("XAU_BEST_SETUP_MIN_CONFIDENCE", "94"))
 XAU_BEST_SETUP_MAX_STOP_PCT = float(os.getenv("XAU_BEST_SETUP_MAX_STOP_PCT", "1.50"))
+
+# ===== NORMAL extended markets =====
+# Gold and DeFi are tradable only in NORMAL. MICRO remains BTC/ETH/GRAM.
+NORMAL_GOLD_TRADING_ENABLED = os.getenv("NORMAL_GOLD_TRADING_ENABLED", "true").lower() == "true"
+NORMAL_DEFI_TRADING_ENABLED = os.getenv("NORMAL_DEFI_TRADING_ENABLED", "true").lower() == "true"
+NORMAL_DEFI_TOP_N = int(os.getenv("NORMAL_DEFI_TOP_N", "3"))
+
+# DeFi gets a stricter quality bar and smaller deterministic risk budget.
+DEFI_TRADE_MIN_QUALITY = float(os.getenv("DEFI_TRADE_MIN_QUALITY", "82"))
+DEFI_TRADE_MIN_CONFIDENCE = float(os.getenv("DEFI_TRADE_MIN_CONFIDENCE", "86"))
+DEFI_TRADE_HARD_RISK_PCT = float(os.getenv("DEFI_TRADE_HARD_RISK_PCT", "0.0035"))
+DEFI_TRADE_MAX_LEVERAGE = float(os.getenv("DEFI_TRADE_MAX_LEVERAGE", "3"))
+MAX_DEFI_OPEN_POSITIONS = int(os.getenv("MAX_DEFI_OPEN_POSITIONS", "1"))
+DEFI_TRADE_MAX_SPREAD_PCT = float(os.getenv("DEFI_TRADE_MAX_SPREAD_PCT", "0.10"))
+DEFI_MAX_ENTRY_SLIPPAGE_PCT = float(os.getenv("DEFI_MAX_ENTRY_SLIPPAGE_PCT", "0.10"))
+OKX_ACCOUNT_INSTRUMENT_CACHE_SECONDS = int(os.getenv("OKX_ACCOUNT_INSTRUMENT_CACHE_SECONDS", "300"))
 
 
 # ===== Passive observability / analytics =====

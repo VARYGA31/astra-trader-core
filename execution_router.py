@@ -20,6 +20,17 @@ def open_trade(decision, risk):
     adapter = OKXDemoAdapter()
     asset = decision["asset"]
     action = str(decision.get("action","")).upper()
+
+    # Account-specific instrument preflight. Publicly listed does not always
+    # mean the current demo account is permitted to trade the instrument.
+    tradability=adapter.account_tradability(asset)
+    if not tradability.get("available"):
+        return {
+            "status":"REJECTED",
+            "reason":"OKX_ACCOUNT_INSTRUMENT_UNAVAILABLE",
+            "stage":"instrument_preflight",
+            "tradability":tradability,
+        }
     mtf_mode = str(decision.get("mtf_mode") or "NORMAL").upper()
     strategy_mode = str(decision.get("strategy_mode") or ("SCALP" if mtf_mode=="SCALP" else "NORMAL")).upper()
     scalp_tier = str(risk.get("scalp_tier") or decision.get("scalp_tier") or "PRIME").upper() if strategy_mode=="SCALP" else None
@@ -38,6 +49,19 @@ def open_trade(decision, risk):
             "exchange_summary":summary,
             "maximum":max_open_positions,
         }
+
+    if asset in set(config.DEFI_TRADE_WATCHLIST):
+        defi_open=sum(
+            1 for p in summary.get("details",[])
+            if str(p.get("asset") or "").upper() in set(config.DEFI_TRADE_WATCHLIST)
+        )
+        if defi_open>=int(config.MAX_DEFI_OPEN_POSITIONS):
+            return {
+                "status":"REJECTED",
+                "reason":"DEFI_CONCENTRATION_EXCHANGE_GUARD",
+                "open_defi_positions":defi_open,
+                "maximum":int(config.MAX_DEFI_OPEN_POSITIONS),
+            }
 
     if config.BLOCK_BTC_ETH_SAME_DIRECTION and asset in {"BTC","ETH"}:
         other = "ETH" if asset == "BTC" else "BTC"
@@ -160,17 +184,32 @@ def open_trade(decision, risk):
         )
         rounded_limit=float(adapter.normalize_entry_limit_price(asset,action,raw_limit))
 
-        opened=adapter.open_fok(
-            asset,
-            action,
-            risk["position_notional_usd"],
-            risk["leverage"],
-            risk["stop_loss"],
-            risk["take_profit_1"],
-            risk["take_profit_2"],
-            rounded_limit,
-            pre_order_reference,
-        )
+        try:
+            opened=adapter.open_fok(
+                asset,
+                action,
+                risk["position_notional_usd"],
+                risk["leverage"],
+                risk["stop_loss"],
+                risk["take_profit_1"],
+                risk["take_profit_2"],
+                rounded_limit,
+                pre_order_reference,
+            )
+        except Exception as e:
+            return {
+                "status":"REJECTED",
+                "reason":"OKX_ORDER_SUBMISSION_ERROR",
+                "stage":"order_submit",
+                "asset":asset,
+                "error_type":type(e).__name__,
+                "error":str(e)[:800],
+                "tradability":tradability,
+                "pre_order_reference":pre_order_reference,
+                "pre_order_quote":pre_order_quote,
+                "execution_quality":quality_guard,
+                "entry_attempts":attempts,
+            }
         attempts.append({
             "attempt":attempt_no,
             "reference":pre_order_reference,

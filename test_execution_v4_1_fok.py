@@ -21,6 +21,9 @@ class FakeAdapter:
         self.open_n=0
         FakeAdapter.instances.append(self)
 
+    def account_tradability(self,asset):
+        return {"available":True,"reason":"OK","instrument":f"{asset}-USDT-SWAP"}
+
     def exchange_active_summary(self):
         return {"open_positions":0,"current_exposure_usd":0.0,"assets":[],"details":[]}
 
