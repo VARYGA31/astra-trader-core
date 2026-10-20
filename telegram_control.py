@@ -11,7 +11,7 @@ import requests
 
 import config,strategy_mode,telegram_notifier,demo_ledger,micro_stats
 import adaptive_memory,adaptive_cost,adaptive_trainer,multi_market_trainer,strategy_tournament
-import crypto_shadow_lab
+import crypto_shadow_lab,trade_universe
 from okx_demo_adapter import OKXDemoAdapter
 
 API="https://api.telegram.org"
@@ -75,6 +75,8 @@ def _summary():
     execute="ON" if config.AUTO_PAPER_EXECUTION else "OFF"
     icon="🔥" if mode=="MICRO" else "🟦" if mode=="NORMAL" else "⏸"
     shadow=str(crypto_shadow_lab.STATE.get("status") or "—")
+    universe=trade_universe.summary()
+    normal_assets=", ".join(universe.get("normal_assets") or []) or "—"
     return (
         f"🎛 <b>ASTRA CONTROL</b>\n\n"
         f"Активный режим: {icon} <b>{mode}</b>\n"
@@ -83,8 +85,9 @@ def _summary():
         f"Execution target: <b>{config.EXECUTION_MODE}</b>\n"
         f"Открытых позиций: <b>{ex.get('open_positions','—')}</b>\n"
         f"Demo equity: <b>${float(ledger.get('equity') or 0):.2f}</b>\n\n"
-        f"🟦 NORMAL: обычная ASTRA 4H → 1H → 15M\n"
-        f"🔥 MICRO v2: 5M → 3M → 1M, OKX-native flow, NET-edge gate, hard exit ≤ {config.MICRO_MAX_HOLD_SECONDS//60} мин\n"
+        f"🟦 NORMAL: 4H → 1H → 15M · активы: <b>{normal_assets}</b>\n"
+        f"   DeFi dynamic top-{config.NORMAL_DEFI_TOP_N}: <b>{'ON' if config.NORMAL_DEFI_TRADING_ENABLED else 'OFF'}</b> · Gold XAU: <b>{'ON' if config.NORMAL_GOLD_TRADING_ENABLED else 'OFF'}</b>\n"
+        f"🔥 MICRO v2: BTC/ETH/GRAM · 5M → 3M → 1M, OKX-native flow, NET-edge gate, hard exit ≤ {config.MICRO_MAX_HOLD_SECONDS//60} мин\n"
         f"🔬 Shadow learning: <b>{shadow}</b> — Trainer/Tournament учатся, но ордера не открывают.\n"
         f"⏸ PAUSE: новые входы выключены, защита открытой позиции продолжает работать."
     )
@@ -171,7 +174,7 @@ def handle_update(update):
         return {"status":"OK","action":"MENU_LEARNING"}
 
     if upper=="🌐 РЫНКИ":
-        _send("🌐 <b>РЫНКИ-ЛАБОРАТОРИИ</b>\n\nGold и DeFi остаются shadow-only.","MARKETS")
+        _send("🌐 <b>РЫНКИ</b>\n\nGold и динамический DeFi universe теперь могут торговаться в NORMAL. Кнопки ниже показывают отдельную shadow-статистику лабораторий.","MARKETS")
         return {"status":"OK","action":"MENU_MARKETS"}
 
     if lower in {"/mode","/help"} or upper=="🎛 MODE":
