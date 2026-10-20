@@ -258,6 +258,11 @@ def evaluate(package, force_event=False):
             "reason":mtf.get("reason","MTF_NOT_ALIGNED"),
             "mtf":mtf,
         }
+    if (
+        str(package.get("asset") or "").upper() in set(config.DEFI_TRADE_WATCHLIST)
+        and str(mtf.get("mode") or "").upper()=="TRANSITION"
+    ):
+        return {"call_model":False,"reason":"DEFI_TRANSITION_NOT_ALLOWED","mtf":mtf}
 
     # For gold, do not enter in the first few minutes after a fresh verified
     # high-impact macro headline. Wait for price discovery / 15m confirmation.
