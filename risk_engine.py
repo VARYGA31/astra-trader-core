@@ -161,10 +161,12 @@ def evaluate(d):
         if mtf_quality<min_quality:
             return reject("SCALP_QUALITY_TOO_LOW",{"mtf_quality":mtf_quality,"minimum":min_quality,"scalp_tier":scalp_tier})
     elif is_transition:
-        # Transition mode is crypto-only and deliberately stricter on model
-        # confidence while using a smaller deterministic risk budget.
+        # Transition mode is kept away from XAU and DeFi. Extended markets
+        # require the full NORMAL alignment until they build their own evidence.
         if asset=="XAU":
             return reject("XAU_TRANSITION_NOT_ALLOWED")
+        if asset in DEFI:
+            return reject("DEFI_TRANSITION_NOT_ALLOWED")
         if confidence<config.MTF_TRANSITION_MIN_CONFIDENCE:
             return reject("TRANSITION_CONFIDENCE_TOO_LOW",{
                 "confidence":confidence,
