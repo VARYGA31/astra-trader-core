@@ -61,3 +61,41 @@ Safe defaults remain:
 - Only the top configured DeFi markets are active at once; default is 3.
 - DeFi requires stricter confidence/quality, max 3x leverage, tighter slippage, protocol-security halts, and max one simultaneous DeFi position.
 - MICRO remains limited to BTC/ETH/GRAM.
+
+
+## Alpha Factory v1
+
+ASTRA now includes a shadow-only empirical strategy factory. It mines cost-aware
+Trainer outcomes for repeatable combinations of market features ("genes") and
+evaluates each genome chronologically:
+
+- train / out-of-sample split;
+- walk-forward fold stability;
+- NET expectancy in R after estimated friction;
+- Profit Factor, max drawdown and recovery factor;
+- lower-confidence-bound R;
+- Spearman IC between setup quality and outcome;
+- recent-vs-prior decay detection.
+
+Factory statuses are `SHADOW_CHAMPION`, `PROMISING`, `CHALLENGER`,
+`DEGRADED`, `REJECTED`, and `COLLECTING`.
+
+**Alpha Factory has no model-call or order-routing capability.** Promotion is
+research evidence only and cannot alter Risk Engine, leverage, execution, or
+runtime mode.
+
+## ASTRA Mission Control
+
+A read-only futuristic dashboard is served at `/mission-control` and consumes
+`/api/mission-control`. It shows:
+
+- system / OKX Demo health;
+- all-history NET PnL, PF, W/L and current mode;
+- Alpha Factory genome constellation and OOS metrics;
+- Strategy Tournament leaderboard;
+- Trainer / MICRO / second-position shadow stats;
+- active NORMAL universe and blocker diagnostics.
+
+The UI exposes no trading actions. When `MISSION_CONTROL_ACCESS_TOKEN` is set,
+all telemetry data endpoints require `Authorization: Bearer <token>`; the
+public `/health` endpoint stays minimal for Railway health checks.
