@@ -22,7 +22,7 @@ ASSETS = {
         "okx_spot": "AAVE-USDT",
         "okx_swap": "AAVE-USDT-SWAP",
         "aliases": ["aave", "aave protocol"],
-        "lab_only": True,
+        "normal_trade_eligible": True,
         "market_group": "DEFI",
     },
     "UNI": {
@@ -30,7 +30,7 @@ ASSETS = {
         "okx_spot": "UNI-USDT",
         "okx_swap": "UNI-USDT-SWAP",
         "aliases": ["uniswap", "uni"],
-        "lab_only": True,
+        "normal_trade_eligible": True,
         "market_group": "DEFI",
     },
     "LDO": {
@@ -38,7 +38,7 @@ ASSETS = {
         "okx_spot": "LDO-USDT",
         "okx_swap": "LDO-USDT-SWAP",
         "aliases": ["lido", "ldo", "lido dao"],
-        "lab_only": True,
+        "normal_trade_eligible": True,
         "market_group": "DEFI",
     },
     "PENDLE": {
@@ -46,7 +46,7 @@ ASSETS = {
         "okx_spot": "PENDLE-USDT",
         "okx_swap": "PENDLE-USDT-SWAP",
         "aliases": ["pendle", "pendle finance"],
-        "lab_only": True,
+        "normal_trade_eligible": True,
         "market_group": "DEFI",
     },
     "CRV": {
@@ -54,7 +54,7 @@ ASSETS = {
         "okx_spot": "CRV-USDT",
         "okx_swap": "CRV-USDT-SWAP",
         "aliases": ["curve", "curve finance", "crv"],
-        "lab_only": True,
+        "normal_trade_eligible": True,
         "market_group": "DEFI",
     },
     "MORPHO": {
@@ -62,7 +62,7 @@ ASSETS = {
         "okx_spot": "MORPHO-USDT",
         "okx_swap": "MORPHO-USDT-SWAP",
         "aliases": ["morpho", "morpho protocol"],
-        "lab_only": True,
+        "normal_trade_eligible": True,
         "market_group": "DEFI",
     },
     "XAU": {
