@@ -12,6 +12,7 @@ import config
 import trade_cycle
 import adaptive_trainer
 import strategy_tournament
+import alpha_factory
 
 ORDER_CAPABILITY=False
 MODEL_CALL_CAPABILITY=False
@@ -36,6 +37,10 @@ def run_once():
         strategy_tournament.process(packages)
         if config.STRATEGY_TOURNAMENT_V5_ENABLED else {"status":"DISABLED"}
     )
+    factory=(
+        alpha_factory.refresh()
+        if config.ALPHA_FACTORY_ENABLED else {"status":"DISABLED","order_capability":False}
+    )
     result={
         "status":"OK",
         "trainer":{
@@ -48,6 +53,14 @@ def run_once():
             "evaluated":tournament.get("evaluated"),
             "best":tournament.get("best"),
             "champions":len(tournament.get("champions") or []),
+        },
+        "alpha_factory":{
+            "status":factory.get("status"),
+            "evidence_rows":factory.get("evidence_rows",0),
+            "evaluated_genomes":factory.get("evaluated_genomes",0),
+            "shadow_champions":len(factory.get("shadow_champions") or []),
+            "promising":len(factory.get("promising") or []),
+            "order_capability":False,
         },
         "order_capability":ORDER_CAPABILITY,
         "model_calls":0,
