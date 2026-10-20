@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 import json
+import threading
 from pathlib import Path
 from datetime import datetime, timezone
 import config
 
 FILE = Path(config.STATE_DIR) / "demo_ledger.json"
+LOCK = threading.RLock()
 
 def now():
     return datetime.now(timezone.utc)
@@ -23,7 +25,7 @@ def base():
         "updated_at_utc": now().isoformat(),
     }
 
-def load():
+def _load_unlocked():
     try:
         s = json.loads(FILE.read_text(encoding="utf-8"))
     except Exception:
@@ -33,20 +35,32 @@ def load():
         s["daily_pnl_date"] = today()
     return s
 
-def save(s):
+def load():
+    with LOCK:
+        return _load_unlocked()
+
+def _save_unlocked(s):
     FILE.parent.mkdir(parents=True, exist_ok=True)
     s["updated_at_utc"] = now().isoformat()
-    tmp = FILE.with_suffix(".tmp")
+    # Use a unique temp file so even accidental cross-thread/process overlap
+    # cannot make one writer remove another writer's temporary path.
+    tmp = FILE.with_name(
+        f"{FILE.name}.{threading.get_ident()}.{int(now().timestamp()*1_000_000)}.tmp"
+    )
     tmp.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(FILE)
 
-def status():
-    s = load()
+def save(s):
+    with LOCK:
+        _save_unlocked(s)
+
+def _status_unlocked():
+    s = _load_unlocked()
     equity = float(s["initial_equity"]) + float(s["realized_pnl"])
     dd = max(0.0, (float(s["initial_equity"]) - equity) / float(s["initial_equity"]))
     if dd >= config.MAX_DRAWDOWN_PCT:
         s["trading_halted"] = True
-    save(s)
+    _save_unlocked(s)
     return {
         "initial_equity": float(s["initial_equity"]),
         "equity": equity,
@@ -57,14 +71,19 @@ def status():
         "closed_trades": int(s["closed_trades"]),
     }
 
+def status():
+    with LOCK:
+        return _status_unlocked()
+
 def apply_closed_trade(pnl_usd):
-    s = load()
-    pnl = float(pnl_usd or 0.0)
-    s["realized_pnl"] = float(s["realized_pnl"]) + pnl
-    s["daily_realized_pnl"] = float(s["daily_realized_pnl"]) + pnl
-    s["closed_trades"] = int(s["closed_trades"]) + 1
-    save(s)
-    return status()
+    with LOCK:
+        s = _load_unlocked()
+        pnl = float(pnl_usd or 0.0)
+        s["realized_pnl"] = float(s["realized_pnl"]) + pnl
+        s["daily_realized_pnl"] = float(s["daily_realized_pnl"]) + pnl
+        s["closed_trades"] = int(s["closed_trades"]) + 1
+        _save_unlocked(s)
+        return _status_unlocked()
 
 if __name__ == "__main__":
     print(json.dumps(status(), ensure_ascii=False))
