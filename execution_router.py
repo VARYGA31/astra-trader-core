@@ -50,6 +50,19 @@ def open_trade(decision, risk):
             "maximum":max_open_positions,
         }
 
+    if asset in set(config.DEFI_TRADE_WATCHLIST):
+        defi_open=sum(
+            1 for p in summary.get("details",[])
+            if str(p.get("asset") or "").upper() in set(config.DEFI_TRADE_WATCHLIST)
+        )
+        if defi_open>=int(config.MAX_DEFI_OPEN_POSITIONS):
+            return {
+                "status":"REJECTED",
+                "reason":"DEFI_CONCENTRATION_EXCHANGE_GUARD",
+                "open_defi_positions":defi_open,
+                "maximum":int(config.MAX_DEFI_OPEN_POSITIONS),
+            }
+
     if config.BLOCK_BTC_ETH_SAME_DIRECTION and asset in {"BTC","ETH"}:
         other = "ETH" if asset == "BTC" else "BTC"
         for p in summary.get("details", []):
