@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-import json,time,threading,traceback
+import json,time,threading,traceback,hmac
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from datetime import datetime,timezone
 
 import config,news_listener,position_monitor,trade_cycle,paper_execution,execution_router,decision_gate,observability
 import strategy_mode,micro_decision_gate,telegram_control,micro_stats,micro_market_stream,micro_second_shadow,crypto_shadow_lab,trade_universe
-import adaptive_memory,adaptive_cost,adaptive_trainer,multi_market_trainer,strategy_tournament
+import adaptive_memory,adaptive_cost,adaptive_trainer,multi_market_trainer,strategy_tournament,alpha_factory,mission_control
 import position_exit_guard
 from astra_client import decide
 
@@ -44,6 +44,7 @@ R={
     "adaptive_trainer_7d":adaptive_trainer.summary(168),
     "multi_market_trainer_7d":multi_market_trainer.summary(168) if config.MULTI_MARKET_TRAINER_V3_ENABLED else {"status":"DISABLED"},
     "strategy_tournament_7d":strategy_tournament.summary(168) if config.STRATEGY_TOURNAMENT_V5_ENABLED else {"status":"DISABLED"},
+    "alpha_factory":alpha_factory.summary(),
 }
 
 def now():return datetime.now(timezone.utc)
@@ -56,6 +57,7 @@ def _heartbeat(mode):
         ms=micro_stats.summary(6)
         stream=micro_market_stream.health()
         second_shadow=micro_second_shadow.summary()
+        af=alpha_factory.summary()
         payload={
             "event":"ASTRA_HEARTBEAT",
             "at_utc":now().isoformat(),
@@ -86,6 +88,14 @@ def _heartbeat(mode):
                 "avg_r":overall.get("avg_r"),
             },
             "shadow_lab_status":crypto_shadow_lab.STATE.get("status"),
+            "alpha_factory":{
+                "status":af.get("status"),
+                "evidence_rows":af.get("evidence_rows",0),
+                "evaluated_genomes":af.get("evaluated_genomes",0),
+                "shadow_champions":len(af.get("shadow_champions") or []),
+                "promising":len(af.get("promising") or []),
+                "stale":af.get("stale"),
+            },
             "trade_universe":trade_universe.summary(),
         }
         print(json.dumps(payload,ensure_ascii=False,separators=(",",":")),flush=True)
@@ -114,27 +124,72 @@ def refresh_observability():
         R["adaptive_trainer_7d"]=adaptive_trainer.summary(168)
         R["multi_market_trainer_7d"]=multi_market_trainer.summary(168) if config.MULTI_MARKET_TRAINER_V3_ENABLED else {"status":"DISABLED"}
         R["strategy_tournament_7d"]=strategy_tournament.summary(168) if config.STRATEGY_TOURNAMENT_V5_ENABLED else {"status":"DISABLED"}
+        R["alpha_factory"]=alpha_factory.summary()
     except Exception:
         # Diagnostics must never be able to degrade the trading worker.
         pass
 
 class H(BaseHTTPRequestHandler):
+    def _authorized(self):
+        expected=str(config.MISSION_CONTROL_ACCESS_TOKEN or "")
+        if not expected:
+            return True
+        auth=str(self.headers.get("Authorization") or "")
+        supplied=auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+        return bool(supplied) and hmac.compare_digest(supplied,expected)
+
+    def _send_bytes(self,body,content_type,status=200):
+        self.send_response(status)
+        self.send_header("Content-Type",content_type)
+        self.send_header("Content-Length",str(len(body)))
+        self.send_header("Cache-Control","no-store")
+        self.send_header("X-Content-Type-Options","nosniff")
+        self.send_header("X-Frame-Options","DENY")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _json(self,payload,status=200):
+        self._send_bytes(
+            json.dumps(payload,ensure_ascii=False,separators=(",",":")).encode(),
+            "application/json; charset=utf-8",
+            status,
+        )
+
     def do_GET(self):
         path=self.path.split("?",1)[0]
-        if path not in {"/","/health","/analytics"}:
-            self.send_response(404);self.end_headers();return
 
+        # Railway healthcheck stays public and deliberately contains no account,
+        # trade, model, news or strategy research details.
+        if path=="/health":
+            return self._json({
+                "status":R.get("status"),
+                "started_at_utc":R.get("started_at_utc"),
+                "mode":(R.get("strategy_mode") or {}).get("mode"),
+                "at_utc":now().isoformat(),
+            },200 if R.get("status")!="failed" else 503)
+
+        if path=="/mission-control":
+            if not config.MISSION_CONTROL_ENABLED:
+                return self._json({"status":"DISABLED"},404)
+            body=mission_control.html().encode("utf-8")
+            return self._send_bytes(body,"text/html; charset=utf-8",200)
+
+        if path not in {"/","/analytics","/api/mission-control"}:
+            return self._json({"status":"NOT_FOUND"},404)
+
+        if not self._authorized():
+            return self._json({"status":"UNAUTHORIZED"},401)
+
+        refresh_observability()
         if path=="/analytics":
             payload=observability.analytics_report()
+        elif path=="/api/mission-control":
+            if not config.MISSION_CONTROL_ENABLED:
+                return self._json({"status":"DISABLED"},404)
+            payload=mission_control.build_payload(R)
         else:
-            refresh_observability()
             payload=R
-
-        b=json.dumps(payload,ensure_ascii=False).encode()
-        self.send_response(200 if R["status"]!="failed" else 503)
-        self.send_header("Content-Type","application/json")
-        self.send_header("Content-Length",str(len(b)))
-        self.end_headers();self.wfile.write(b)
+        return self._json(payload,200 if R.get("status")!="failed" else 503)
 
     def log_message(self,*args):return
 
