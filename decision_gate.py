@@ -6,6 +6,49 @@ import config
 
 STATE_FILE = Path(config.STATE_DIR) / "decision_gate_state.json"
 
+DEFI_SECURITY_WORDS=(
+    "exploit","exploited","hack","hacked","drain","drained","vulnerability",
+    "oracle attack","oracle failure","depeg","de-peg","compromised",
+    "emergency pause","security incident","stolen funds"
+)
+
+def _defi_pretrade_guard(package):
+    asset=str((package or {}).get("asset") or "").upper()
+    if asset not in set(config.DEFI_TRADE_WATCHLIST):
+        return None
+
+    perp=((package or {}).get("decision_context") or {}).get("market",{}).get("perp_okx",{})
+    try:
+        bid=float(perp.get("bid_price")); ask=float(perp.get("ask_price"))
+        mid=(bid+ask)/2.0
+        spread=((ask-bid)/mid*100.0) if mid>0 and ask>=bid else None
+    except Exception:
+        spread=None
+    if spread is None:
+        return {"call_model":False,"reason":"DEFI_SPREAD_UNAVAILABLE"}
+    if spread>float(config.DEFI_TRADE_MAX_SPREAD_PCT):
+        return {
+            "call_model":False,"reason":"DEFI_SPREAD_TOO_WIDE",
+            "spread_pct":spread,"maximum_pct":float(config.DEFI_TRADE_MAX_SPREAD_PCT),
+        }
+
+    now_dt=datetime.now(timezone.utc)
+    for e in ((package or {}).get("decision_context") or {}).get("news",{}).get("events",[]):
+        text=(" ".join(str(e.get(k) or "") for k in ("title","summary","event_type"))).lower()
+        if not any(w in text for w in DEFI_SECURITY_WORDS):
+            continue
+        dt=_parse_event_time(e.get("published_at_utc"))
+        if dt is None or (now_dt-dt).total_seconds()<=float(config.DEFI_SECURITY_HALT_HOURS)*3600.0:
+            return {
+                "call_model":False,"reason":"DEFI_SECURITY_HALT",
+                "event":{k:e.get(k) for k in ("id","source","title","published_at_utc")},
+            }
+    return None
+
+def _parse_event_time(x):
+    try:return datetime.fromisoformat(str(x or "").replace("Z","+00:00"))
+    except Exception:return None
+
 def _load():
     try:
         return json.loads(STATE_FILE.read_text(encoding="utf-8"))
@@ -200,6 +243,10 @@ def evaluate(package, force_event=False):
         or (package.get("asset")=="XAU" and not g.get("gold_macro_primary_ok",False))
     ):
         return {"call_model":False,"reason":"GUARD_BLOCK","guards":g}
+
+    defi_guard=_defi_pretrade_guard(package)
+    if defi_guard:
+        return defi_guard
 
     if int(package.get("account_state",{}).get("open_positions",0))>=config.MAX_OPEN_POSITIONS:
         return {"call_model":False,"reason":"MAX_OPEN_POSITIONS"}
