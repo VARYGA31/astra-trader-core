@@ -39,6 +39,10 @@ jobs:
         run: python test_execution_v4_1_fok.py
       - name: Strategy Tournament v5 regression
         run: python test_strategy_tournament_v5.py
+      - name: Alpha Factory OOS regression
+        run: python test_alpha_factory.py
+      - name: Mission Control read-only regression
+        run: python test_mission_control.py
       - name: Telegram runtime mode test
         run: python test_telegram_mode_control.py
       - name: Shadow lab safety regression
