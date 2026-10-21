@@ -28,6 +28,8 @@ def test_payload_contains_safe_research_layers():
     assert "alpha_factory" in x["research"],x
     assert "tournament" in x["research"],x
     assert "normal_assets" in x["universe"],x
+    assert "model_budget" in x,x
+    assert "status" in x["model_budget"],x
 
 if __name__=="__main__":
     test_mission_control_is_read_only()
