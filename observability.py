@@ -240,6 +240,7 @@ def record_decision(package, gate, decision, execution, model_called=False):
                 "take_profit_1": decision.get("take_profit_1"),
                 "take_profit_2": decision.get("take_profit_2"),
             } if model_called else None,
+            "shadow_council": (package or {}).get("shadow_council"),
             "execution": {
                 "status": exec_status,
                 "reason": exec_reason,
