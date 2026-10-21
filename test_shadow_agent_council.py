@@ -61,14 +61,15 @@ def gate():
 def _sandbox():
     td=tempfile.TemporaryDirectory()
     root=Path(td.name)
-    old=(market_scanner.STATE,agent_council.STATE,agent_council.LOG)
+    old=(market_scanner.STATE,agent_council.STATE,agent_council.LOG,agent_council.OUTCOMES)
     market_scanner.STATE=root/"scanner.json"
     agent_council.STATE=root/"council_state.json"
     agent_council.LOG=root/"council.jsonl"
+    agent_council.OUTCOMES=root/"council_outcomes.jsonl"
     return td,old
 
 def _restore(td,old):
-    market_scanner.STATE,agent_council.STATE,agent_council.LOG=old
+    market_scanner.STATE,agent_council.STATE,agent_council.LOG,agent_council.OUTCOMES=old
     td.cleanup()
 
 def test_council_is_strong_but_shadow_only():
@@ -84,7 +85,7 @@ def test_council_is_strong_but_shadow_only():
         assert x["model_call_capability"] is False,x
         assert x["execution_authority"] is False,x
         assert len(x["agents"])==6,x
-        agent_council.record(x)
+        agent_council.record(x,p)
         s=agent_council.summary()
         assert s["recorded_total"]==1,s
         assert "BTC" in s["strong_assets"],s
