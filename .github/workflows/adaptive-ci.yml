@@ -45,6 +45,8 @@ jobs:
         run: python test_mission_control.py
       - name: Unified model budget regression
         run: python test_model_budget.py
+      - name: Shadow Agent Council regression
+        run: python test_shadow_agent_council.py
       - name: Demo ledger concurrency regression
         run: python test_demo_ledger_concurrency.py
       - name: Telegram runtime mode test

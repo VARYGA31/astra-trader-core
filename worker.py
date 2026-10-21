@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from datetime import datetime,timezone
 
 import config,news_listener,position_monitor,trade_cycle,paper_execution,execution_router,decision_gate,observability
-import strategy_mode,micro_decision_gate,telegram_control,micro_stats,micro_market_stream,micro_second_shadow,crypto_shadow_lab,trade_universe
+import strategy_mode,micro_decision_gate,telegram_control,micro_stats,micro_market_stream,micro_second_shadow,crypto_shadow_lab,trade_universe,market_scanner,agent_council
 import adaptive_memory,adaptive_cost,adaptive_trainer,multi_market_trainer,strategy_tournament,alpha_factory,mission_control,model_budget
 import position_exit_guard
 from astra_client import decide
@@ -46,6 +46,8 @@ R={
     "strategy_tournament_7d":strategy_tournament.summary(168) if config.STRATEGY_TOURNAMENT_V5_ENABLED else {"status":"DISABLED"},
     "alpha_factory":alpha_factory.summary(),
     "model_budget":model_budget.summary(),
+    "market_scanner":market_scanner.summary(),
+    "shadow_agent_council":agent_council.summary(),
 }
 
 def now():return datetime.now(timezone.utc)
@@ -104,6 +106,16 @@ def _heartbeat(mode):
                 "stale":af.get("stale"),
             },
             "trade_universe":trade_universe.summary(),
+            "market_scanner":{
+                "status":market_scanner.summary().get("status"),
+                "ranking":(market_scanner.summary().get("ranking") or [])[:5],
+            },
+            "shadow_agent_council":{
+                "status":agent_council.summary().get("status"),
+                "recorded_total":agent_council.summary().get("recorded_total",0),
+                "status_counts":agent_council.summary().get("status_counts") or {},
+                "strong_assets":agent_council.summary().get("strong_assets") or [],
+            },
         }
         print(json.dumps(payload,ensure_ascii=False,separators=(",",":")),flush=True)
     except Exception as e:
@@ -133,6 +145,8 @@ def refresh_observability():
         R["strategy_tournament_7d"]=strategy_tournament.summary(168) if config.STRATEGY_TOURNAMENT_V5_ENABLED else {"status":"DISABLED"}
         R["alpha_factory"]=alpha_factory.summary()
         R["model_budget"]=model_budget.summary()
+        R["market_scanner"]=market_scanner.summary()
+        R["shadow_agent_council"]=agent_council.summary()
     except Exception:
         # Diagnostics must never be able to degrade the trading worker.
         pass
@@ -301,8 +315,16 @@ def main():
                     if t-last_decision.get(a,0)>=interval or a in high:
                         stage=f"decision_prepare:{a}"
                         p=trade_cycle.prepare(a,12,mode)
+                        stage=f"market_scanner:{a}"
+                        market_scanner.observe(p)
                         stage=f"decision_gate:{a}"
                         gate=gate_module.evaluate(p,force_event=a in high)
+                        stage=f"shadow_council:{a}"
+                        council=agent_council.evaluate(p,gate)
+                        agent_council.record(council,p)
+                        p["shadow_council"]=council
+                        R["market_scanner"]=market_scanner.summary()
+                        R["shadow_agent_council"]=agent_council.summary()
 
                         if not gate["call_model"]:
                             d={"asset":a,"action":"WAIT","reason":gate["reason"],"gate":gate,"strategy_mode":mode}
@@ -340,6 +362,7 @@ def main():
                             "strategy_mode":mode,
                             "decision":d,
                             "execution":x,
+                            "shadow_council":council,
                         }
                         stage=f"observability:{a}"
                         observability.record_decision(p,gate,d,x,model_called=bool(d.get("_model_called",False)))

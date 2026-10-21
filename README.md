@@ -121,3 +121,31 @@ Defaults:
 
 The model layer remains advisory. Budget/circuit failures fail closed to WAIT
 and never bypass Risk Engine or order-routing safeguards.
+
+
+## Shadow Agent Council v1
+
+ASTRA includes a zero-token multi-agent research layer inspired by ensemble
+trading systems. It does **not** control live/demo execution in v1.
+
+Six deterministic agents inspect the same already-fetched market package:
+
+- **NOVA** — multi-timeframe trend / structure;
+- **ORION** — momentum / timing;
+- **VEGA** — order flow plus passive cross-asset scanner context;
+- **ATLAS** — derivatives crowding from funding / OI availability;
+- **CERBERUS** — anti-FOMO and hard safety veto;
+- **HELIOS** — macro / verified-news context, especially for XAU.
+
+The Council produces a shadow consensus score, agree/oppose counts and veto
+status. Results are persisted with observability decisions for later OOS study.
+There are no OpenAI calls, no order-routing imports, and no ability to mutate
+risk, leverage, mode, or the live trade universe.
+
+## VEGA cross-asset scanner
+
+The scanner reuses market snapshots ASTRA already fetched and ranks fresh assets
+by activity, volume expansion, spread quality, order-flow imbalance and relative
+4h strength/weakness. It performs no extra network calls and does not change the
+tradable universe. Mission Control visualizes both the scanner and the six-agent
+Council as a shadow signal pipeline.
