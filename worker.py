@@ -5,7 +5,7 @@ from datetime import datetime,timezone
 
 import config,news_listener,position_monitor,trade_cycle,paper_execution,execution_router,decision_gate,observability
 import strategy_mode,micro_decision_gate,telegram_control,micro_stats,micro_market_stream,micro_second_shadow,crypto_shadow_lab,trade_universe
-import adaptive_memory,adaptive_cost,adaptive_trainer,multi_market_trainer,strategy_tournament,alpha_factory,mission_control
+import adaptive_memory,adaptive_cost,adaptive_trainer,multi_market_trainer,strategy_tournament,alpha_factory,mission_control,model_budget
 import position_exit_guard
 from astra_client import decide
 
@@ -45,6 +45,7 @@ R={
     "multi_market_trainer_7d":multi_market_trainer.summary(168) if config.MULTI_MARKET_TRAINER_V3_ENABLED else {"status":"DISABLED"},
     "strategy_tournament_7d":strategy_tournament.summary(168) if config.STRATEGY_TOURNAMENT_V5_ENABLED else {"status":"DISABLED"},
     "alpha_factory":alpha_factory.summary(),
+    "model_budget":model_budget.summary(),
 }
 
 def now():return datetime.now(timezone.utc)
@@ -88,6 +89,12 @@ def _heartbeat(mode):
                 "avg_r":overall.get("avg_r"),
             },
             "shadow_lab_status":crypto_shadow_lab.STATE.get("status"),
+            "model_budget":{
+                "status":model_budget.summary().get("status"),
+                "model":model_budget.summary().get("model"),
+                "daily":model_budget.summary().get("daily"),
+                "circuit":model_budget.summary().get("circuit"),
+            },
             "alpha_factory":{
                 "status":af.get("status"),
                 "evidence_rows":af.get("evidence_rows",0),
@@ -125,6 +132,7 @@ def refresh_observability():
         R["multi_market_trainer_7d"]=multi_market_trainer.summary(168) if config.MULTI_MARKET_TRAINER_V3_ENABLED else {"status":"DISABLED"}
         R["strategy_tournament_7d"]=strategy_tournament.summary(168) if config.STRATEGY_TOURNAMENT_V5_ENABLED else {"status":"DISABLED"}
         R["alpha_factory"]=alpha_factory.summary()
+        R["model_budget"]=model_budget.summary()
     except Exception:
         # Diagnostics must never be able to degrade the trading worker.
         pass
@@ -253,7 +261,10 @@ def main():
                         if config.EMERGENCY_EXIT_ENABLED and config.EXECUTION_MODE=="okx_demo":
                             r=position_exit_guard.on_verified_news_event(e)
                             reviews.append(r)
-                            if r.get("status")=="REVIEWED":
+                            if (
+                                r.get("status")=="REVIEWED"
+                                and bool((r.get("decision") or {}).get("model_called"))
+                            ):
                                 R["exit_model_calls"]+=1
                             if r.get("close",{}).get("status")=="CLOSE_SUBMITTED":
                                 R["emergency_exits"]+=1
@@ -303,9 +314,21 @@ def main():
                             d=decide(p)
                             d["gate"]=gate
                             d["strategy_mode"]=mode
-                            R["model_calls"]+=1
+                            model_called=bool(d.get("_model_called",False))
+                            if model_called:
+                                R["model_calls"]+=1
+                            else:
+                                R["model_skips"]+=1
+
                             stage=f"execution_or_shadow:{a}"
-                            if mode=="MICRO" and gate.get("second_position_shadow"):
+                            if not model_called:
+                                # Budget/circuit/API failures fail closed. They are
+                                # not allowed to fall through to order routing.
+                                x={
+                                    "status":"NO_TRADE",
+                                    "reason":d.get("reason") or "MODEL_UNAVAILABLE",
+                                }
+                            elif mode=="MICRO" and gate.get("second_position_shadow"):
                                 # Explicitly bypass execution: this experiment only
                                 # measures whether a second position would add NET edge.
                                 x=micro_second_shadow.consider(p,d,gate)
@@ -319,10 +342,10 @@ def main():
                             "execution":x,
                         }
                         stage=f"observability:{a}"
-                        observability.record_decision(p,gate,d,x,model_called=bool(gate.get("call_model")))
+                        observability.record_decision(p,gate,d,x,model_called=bool(d.get("_model_called",False)))
                         if mode=="MICRO":
                             stage=f"micro_stats:{a}"
-                            micro_stats.record(p,gate,d,x,model_called=bool(gate.get("call_model")))
+                            micro_stats.record(p,gate,d,x,model_called=bool(d.get("_model_called",False)))
                         refresh_observability()
                         last_decision[a]=t
 

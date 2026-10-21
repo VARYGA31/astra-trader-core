@@ -2,6 +2,7 @@
 import json
 from openai import OpenAI
 import config
+import model_budget
 
 INSTRUCTIONS = """You are ASTRA TRADER's emergency position-risk reviewer.
 You are NOT opening a trade. You are deciding whether an already-open crypto position
@@ -25,6 +26,23 @@ Rules:
 """
 
 def decide_news_exit(position, event, market):
+    asset=str((position or {}).get("asset") or (event or {}).get("asset") or "").upper()
+    permit=model_budget.before_call(
+        "EMERGENCY_NEWS_EXIT",
+        asset=asset,
+        priority="emergency",
+        model=config.OPENAI_MODEL,
+    )
+    if not permit.get("allowed"):
+        return {
+            "action":"HOLD",
+            "confidence":0.0,
+            "reason":permit.get("reason") or "MODEL_BUDGET_BLOCK",
+            "model_called":False,
+            "model_budget":model_budget.summary(),
+        }
+
+    reservation=permit.get("reservation_id")
     client = OpenAI()
     compact_market = {
         "spot": market.get("spot", {}),
@@ -47,12 +65,31 @@ def decide_news_exit(position, event, market):
         },
         "market": compact_market,
     }
-    r = client.responses.create(
-        model=config.OPENAI_MODEL,
-        instructions=INSTRUCTIONS,
-        input=json.dumps(payload, ensure_ascii=False, separators=(",",":")),
-        reasoning={"effort":"low"},
-        store=False,
+    try:
+        r = client.responses.create(
+            model=config.OPENAI_MODEL,
+            instructions=INSTRUCTIONS,
+            input=json.dumps(payload, ensure_ascii=False, separators=(",",":")),
+            reasoning={"effort":"low"},
+            max_output_tokens=int(config.MODEL_EXIT_MAX_OUTPUT_TOKENS),
+            store=False,
+        )
+    except Exception as e:
+        info=model_budget.record_error(
+            e,reservation,"EMERGENCY_NEWS_EXIT",asset=asset,model=config.OPENAI_MODEL
+        )
+        return {
+            "action":"HOLD",
+            "confidence":0.0,
+            "reason":f"MODEL_API_{info.get('kind') or 'ERROR'}",
+            "model_called":False,
+            "model_api_error":info,
+            "model_budget":model_budget.summary(),
+        }
+
+    model_budget.record_success(
+        r,reservation,"EMERGENCY_NEWS_EXIT",asset=asset,
+        strategy_mode="EMERGENCY",model=config.OPENAI_MODEL,
     )
     try:
         out = json.loads(r.output_text)
@@ -73,9 +110,11 @@ def decide_news_exit(position, event, market):
         "action":action,
         "confidence":max(0.0,min(100.0,conf)),
         "reason":str(out.get("reason","")),
+        "model_called":True,
         "usage":{
             "input_tokens":getattr(getattr(r,"usage",None),"input_tokens",None),
             "output_tokens":getattr(getattr(r,"usage",None),"output_tokens",None),
             "total_tokens":getattr(getattr(r,"usage",None),"total_tokens",None),
         },
+        "model_budget":model_budget.summary(),
     }

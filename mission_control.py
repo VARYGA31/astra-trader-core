@@ -11,6 +11,7 @@ import trade_universe
 import micro_stats
 import trade_journal
 import observability
+import model_budget
 
 READ_ONLY=True
 
@@ -65,6 +66,7 @@ def build_payload(runtime):
             "tournament":tournament,
         },
         "universe":trade_universe.summary(),
+        "model_budget":model_budget.summary(),
         "diagnostics":{
             "top_skip_reasons":_top(runtime.get("skip_reasons") or {},10),
             "last_trade_rejection":runtime.get("last_trade_rejection"),
@@ -163,6 +165,7 @@ footer{color:#66728e;font-size:10px;text-align:center;padding:24px}
  <section class="panel pad span3"><div class="label">Profit Factor</div><div class="metric" id="pf">—</div><div class="kpi-sub" id="winRate">—</div></section>
  <section class="panel pad span3"><div class="label">Alpha Factory</div><div class="metric" id="alphaCount">—</div><div class="kpi-sub" id="alphaStatus">—</div><div class="progress"><i id="alphaBar" style="width:0%"></i></div></section>
  <section class="panel pad span3"><div class="label">Open positions</div><div class="metric" id="openPos">—</div><div class="kpi-sub" id="execution">—</div></section>
+ <section class="panel pad span3"><div class="label">Model budget · UTC day</div><div class="metric" id="modelSpend">—</div><div class="kpi-sub" id="modelBudgetMeta">—</div><div class="progress"><i id="modelBudgetBar" style="width:0%"></i></div></section>
 
  <section class="panel pad span8">
    <div class="section-head"><div><div class="label">POLARIS</div><div class="title">Strategy Constellation</div></div><div class="muted" id="evidence">— evidence</div></div>
@@ -228,7 +231,7 @@ $('tokenInput').addEventListener('keydown',e=>{if(e.key==='Enter')$('unlock').cl
 let latest=null;
 function render(d){
  latest=d;
- const s=d.system||{}, p=(d.performance||{}).overall||{}, a=(d.research||{}).alpha_factory||{};
+ const s=d.system||{}, p=(d.performance||{}).overall||{}, a=(d.research||{}).alpha_factory||{}, mb=d.model_budget||{}, md=mb.daily||{};
  $('sysBadge').innerHTML='<i class="dot"></i>'+String(s.status||'UNKNOWN').toUpperCase();
  $('sysBadge').className='badge '+(s.status==='ok'?'good':s.status==='degraded'?'warn':'bad');
  $('modeBadge').textContent='MODE '+(s.mode||'—');
@@ -240,7 +243,7 @@ function render(d){
  $('alphaStatus').textContent=champs+' shadow champions · '+prom+' promising';
  $('alphaBar').style.width=Math.min(100,Math.max(3,(a.evidence_rows||0)/50))+'%';
  $('openPos').textContent=s.open_positions??'—'; $('execution').textContent=(s.execution_mode||'—')+' · execution '+(s.trade_execution?'ON':'OFF');
- $('evidence').textContent=(a.evidence_rows||0)+' evidence rows · '+(a.discovered_patterns||0)+' patterns';
+ $('modelSpend').textContent='(a.evidence_rows||0)+' evidence rows · '+(a.discovered_patterns||0)+' patterns';
  $('factoryAge').textContent=a.snapshot_age_seconds==null?'collecting':'snapshot '+Math.round(a.snapshot_age_seconds)+'s';
  const uni=d.universe||{}; $('markets').innerHTML=(uni.normal_assets||[]).map(x=>'<span class="chip">'+x+'</span>').join('');
  const m=(d.micro||{}).stats_6h||{}; $('microChecks').textContent=m.checks??0;$('microCalls').textContent=m.model_calls??0;$('microOpened').textContent=m.opened_trades??0;$('microPnl').textContent=money(m.realized_net_pnl_usd||0);
@@ -252,7 +255,7 @@ function render(d){
  const tr=(d.research||{}).trainer||{};$('trainerR').textContent=fmt(tr.avg_net_r??tr.avg_r,3)+'R';$('trainerMeta').textContent=(tr.evaluated||0)+' evaluated · cost '+fmt(tr.avg_cost_r,3)+'R';
  const sh=(d.micro||{}).second_shadow||{};$('shadow2').textContent=(sh.evaluated||0)+' eval';$('shadow2Meta').textContent=(sh.wins||0)+'W/'+(sh.losses||0)+'L · PF '+fmt(sh.profit_factor,2)+' · NET '+money(sh.net_pnl_usd||0);
  const ws=s.micro_stream||{};$('stream').textContent=String(ws.status||'—');$('streamMeta').textContent='OKX WS '+(ws.connected?'connected':'not connected')+' · Shadow Lab '+String((s.shadow_lab||{}).status||'—');
- const diag={last_trade_rejection:(d.diagnostics||{}).last_trade_rejection,last_approved_trade:(d.diagnostics||{}).last_approved_trade,last_model_decision:(d.diagnostics||{}).last_model_decision};
+ const diag={model_budget:mb,last_trade_rejection:(d.diagnostics||{}).last_trade_rejection,last_approved_trade:(d.diagnostics||{}).last_approved_trade,last_model_decision:(d.diagnostics||{}).last_model_decision};
  $('diag').textContent=JSON.stringify(diag,null,2);
  drawConstellation(genomes);
 }
