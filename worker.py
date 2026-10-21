@@ -261,7 +261,10 @@ def main():
                         if config.EMERGENCY_EXIT_ENABLED and config.EXECUTION_MODE=="okx_demo":
                             r=position_exit_guard.on_verified_news_event(e)
                             reviews.append(r)
-                            if r.get("status")=="REVIEWED":
+                            if (
+                                r.get("status")=="REVIEWED"
+                                and bool((r.get("decision") or {}).get("model_called"))
+                            ):
                                 R["exit_model_calls"]+=1
                             if r.get("close",{}).get("status")=="CLOSE_SUBMITTED":
                                 R["emergency_exits"]+=1
