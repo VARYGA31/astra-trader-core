@@ -33,9 +33,28 @@ NEWS_BLOCK_MINUTES=int(os.getenv("NEWS_BLOCK_MINUTES","120"))
 MAX_MODEL_NEWS_EVENTS=int(os.getenv("MAX_MODEL_NEWS_EVENTS","8"))
 PORT=int(os.getenv("PORT","8080"))
 OPENAI_API_KEY=os.getenv("OPENAI_API_KEY","").strip()
-OPENAI_MODEL=os.getenv("OPENAI_MODEL","gpt-6-astra")
+OPENAI_MODEL=os.getenv("OPENAI_MODEL","gpt-6.1-sol")
 OPENAI_PROMPT_ID=os.getenv("OPENAI_PROMPT_ID","").strip()
 OPENAI_REASONING_EFFORT=os.getenv("OPENAI_REASONING_EFFORT","low")
+
+# ===== Unified paid-model cost control =====
+# All trading model calls (NORMAL/MICRO/adaptive/emergency-news review) must
+# reserve from the same budget before touching the OpenAI API.
+MODEL_DAILY_MAX_CALLS = int(os.getenv("MODEL_DAILY_MAX_CALLS", "30"))
+MODEL_DAILY_MAX_USD = float(os.getenv("MODEL_DAILY_MAX_USD", "2.50"))
+MODEL_EMERGENCY_RESERVE_CALLS = int(os.getenv("MODEL_EMERGENCY_RESERVE_CALLS", "3"))
+MODEL_ESTIMATED_NEXT_CALL_USD = float(os.getenv("MODEL_ESTIMATED_NEXT_CALL_USD", "0.05"))
+MODEL_MAX_OUTPUT_TOKENS = int(os.getenv("MODEL_MAX_OUTPUT_TOKENS", "700"))
+MODEL_EXIT_MAX_OUTPUT_TOKENS = int(os.getenv("MODEL_EXIT_MAX_OUTPUT_TOKENS", "300"))
+MODEL_QUOTA_RETRY_SECONDS = int(os.getenv("MODEL_QUOTA_RETRY_SECONDS", "1800"))
+MODEL_RATE_LIMIT_COOLDOWN_SECONDS = int(os.getenv("MODEL_RATE_LIMIT_COOLDOWN_SECONDS", "300"))
+MODEL_API_ERROR_COOLDOWN_SECONDS = int(os.getenv("MODEL_API_ERROR_COOLDOWN_SECONDS", "120"))
+MODEL_AUTH_ERROR_COOLDOWN_SECONDS = int(os.getenv("MODEL_AUTH_ERROR_COOLDOWN_SECONDS", "3600"))
+# Standard GPT-6.1 Sol text prices per 1M tokens. model_budget.py keeps explicit
+# historical mappings for Astra/Luna rows so old usage is not mispriced.
+MODEL_PRICE_INPUT_USD_PER_M = float(os.getenv("MODEL_PRICE_INPUT_USD_PER_M", "2.0"))
+MODEL_PRICE_CACHED_INPUT_USD_PER_M = float(os.getenv("MODEL_PRICE_CACHED_INPUT_USD_PER_M", "0.10"))
+MODEL_PRICE_OUTPUT_USD_PER_M = float(os.getenv("MODEL_PRICE_OUTPUT_USD_PER_M", "10.0"))
 MARKETTWITS_URL=os.getenv("MARKETTWITS_URL","https://t.me/s/markettwits")
 EXECUTION_MODE=os.getenv("EXECUTION_MODE","paper").strip().lower()
 TRADING_TIMEFRAME=os.getenv("TRADING_TIMEFRAME","1h")
@@ -378,15 +397,15 @@ ADAPTIVE_MAX_ESTIMATED_USD_PER_DAY = float(os.getenv("ADAPTIVE_MAX_ESTIMATED_USD
 # Keep a deterministic reserve for strong opportunities/news later in the UTC day.
 ADAPTIVE_BASELINE_RESERVE_CALLS = int(os.getenv("ADAPTIVE_BASELINE_RESERVE_CALLS", "6"))
 ADAPTIVE_BASELINE_RESERVE_USD = float(os.getenv("ADAPTIVE_BASELINE_RESERVE_USD", "0.80"))
-ADAPTIVE_ESTIMATED_NEXT_CALL_USD = float(os.getenv("ADAPTIVE_ESTIMATED_NEXT_CALL_USD", "0.13"))
+ADAPTIVE_ESTIMATED_NEXT_CALL_USD = float(os.getenv("ADAPTIVE_ESTIMATED_NEXT_CALL_USD", "0.05"))
 ADAPTIVE_MAX_NEWS_EVENTS = int(os.getenv("ADAPTIVE_MAX_NEWS_EVENTS", "4"))
 ADAPTIVE_MODEL_MAX_OUTPUT_TOKENS = int(os.getenv("ADAPTIVE_MODEL_MAX_OUTPUT_TOKENS", "1400"))
 
 # Current Standard short-context GPT-6 Astra rates. Kept configurable so the
 # estimator can be updated without a code deploy if API pricing changes.
-ADAPTIVE_PRICE_INPUT_USD_PER_M = float(os.getenv("ADAPTIVE_PRICE_INPUT_USD_PER_M", "10.0"))
-ADAPTIVE_PRICE_CACHED_INPUT_USD_PER_M = float(os.getenv("ADAPTIVE_PRICE_CACHED_INPUT_USD_PER_M", "1.0"))
-ADAPTIVE_PRICE_OUTPUT_USD_PER_M = float(os.getenv("ADAPTIVE_PRICE_OUTPUT_USD_PER_M", "50.0"))
+ADAPTIVE_PRICE_INPUT_USD_PER_M = float(os.getenv("ADAPTIVE_PRICE_INPUT_USD_PER_M", "2.0"))
+ADAPTIVE_PRICE_CACHED_INPUT_USD_PER_M = float(os.getenv("ADAPTIVE_PRICE_CACHED_INPUT_USD_PER_M", "0.10"))
+ADAPTIVE_PRICE_OUTPUT_USD_PER_M = float(os.getenv("ADAPTIVE_PRICE_OUTPUT_USD_PER_M", "10.0"))
 
 
 # ===== ASTRA AUTO v1.1 diagnostics =====
