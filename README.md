@@ -99,3 +99,25 @@ A read-only futuristic dashboard is served at `/mission-control` and consumes
 The UI exposes no trading actions. When `MISSION_CONTROL_ACCESS_TOKEN` is set,
 all telemetry data endpoints require `Authorization: Bearer <token>`; the
 public `/health` endpoint stays minimal for Railway health checks.
+
+
+## Unified model cost control
+
+All paid model-call paths share one daily budget and one global API circuit
+breaker. NORMAL/MICRO final decisions default to `gpt-6.1-sol`; deterministic
+Python gates still decide when a model opinion is worth requesting.
+
+Defaults:
+
+- hard daily paid-model call cap: 30;
+- 3 calls reserved for emergency verified-news position review;
+- hard estimated daily cost cap: USD 2.50;
+- compact final-decision output cap: 900 tokens;
+- `insufficient_quota` opens a global 30-minute circuit instead of hammering
+  the API on every worker tick;
+- generic rate limits/errors also back off globally;
+- model usage, estimated spend, remaining budget and circuit state are visible
+  in Mission Control.
+
+The model layer remains advisory. Budget/circuit failures fail closed to WAIT
+and never bypass Risk Engine or order-routing safeguards.
