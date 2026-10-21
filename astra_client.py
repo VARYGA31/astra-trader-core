@@ -1,8 +1,7 @@
 import json,re
-from pathlib import Path
-from datetime import datetime,timezone
 from openai import OpenAI
 import config
+import model_budget
 
 NORMAL_POLICY = """
 FINAL DECISION CALIBRATION POLICY:
@@ -130,17 +129,7 @@ def _compact(p):
         "news":{"summary":n.get("summary"),"guard":n.get("guard"),"events":ev},
     }
 
-def _log_usage(r,asset,mode):
-    u=getattr(r,"usage",None)
-    if not u:return
-    row={"timestamp_utc":datetime.now(timezone.utc).isoformat(),"asset":asset,"strategy_mode":mode,"model":config.OPENAI_MODEL,
-         "input_tokens":getattr(u,"input_tokens",None),"output_tokens":getattr(u,"output_tokens",None),"total_tokens":getattr(u,"total_tokens",None)}
-    try:
-        path=Path(config.STATE_DIR)/"openai_usage.jsonl"; path.parent.mkdir(parents=True,exist_ok=True)
-        with path.open("a",encoding="utf-8") as f:f.write(json.dumps(row,ensure_ascii=False)+"\n")
-    except Exception:pass
-
-ALLOWED_WAIT_CATEGORIES={"NONE","CHASE_RISK","STRUCTURE_CONFLICT","NEWS_RISK","VOLATILITY_RISK","LIQUIDITY_SPREAD_RISK","RR_OR_STOP_INVALID","REVERSAL_RISK","DATA_QUALITY","XAU_MACRO_RISK","TRANSITION_WEAK"}
+ALLOWED_WAIT_CATEGORIES={"NONE","CHASE_RISK","STRUCTURE_CONFLICT","NEWS_RISK","VOLATILITY_RISK","LIQUIDITY_SPREAD_RISK","RR_OR_STOP_INVALID","REVERSAL_RISK","DATA_QUALITY","XAU_MACRO_RISK","TRANSITION_WEAK","MODEL_UNAVAILABLE"}
 
 def _normalize_decision(d,package):
     mode=str(package.get("strategy_mode") or "NORMAL").upper()
@@ -167,17 +156,60 @@ def _normalize_decision(d,package):
 
 def decide(package):
     mode=str(package.get("strategy_mode") or "NORMAL").upper()
+    asset=str(package.get("asset") or "").upper()
     policy=MICRO_POLICY if mode=="MICRO" else SCALP_POLICY if mode=="SCALP" else NORMAL_POLICY
     instructions=BASE_INSTRUCTIONS+"\n"+policy
+
+    permit=model_budget.before_call(
+        "TRADE_DECISION",
+        asset=asset,
+        priority="normal",
+        model=config.OPENAI_MODEL,
+    )
+    if not permit.get("allowed"):
+        return model_budget.blocked_decision(
+            asset,
+            mode,
+            permit.get("reason") or "MODEL_BUDGET_BLOCK",
+        )
+
+    reservation=permit.get("reservation_id")
     client=OpenAI(); compact=_compact(package)
+    # The policy lives in instructions only. It used to be repeated in input,
+    # wasting uncached tokens on every request.
     kwargs={
-        "input":"Apply this strategy policy exactly:\n"+policy+"\nAnalyze this pre-filtered trading context and return the required JSON only:\n"+json.dumps(compact,ensure_ascii=False,separators=(",",":")),
+        "input":"Analyze this pre-filtered trading context and return the required JSON only:\n"+
+            json.dumps(compact,ensure_ascii=False,separators=(",",":")),
         "store":False,
+        "max_output_tokens":int(config.MODEL_MAX_OUTPUT_TOKENS),
     }
     if config.OPENAI_PROMPT_ID:
         kwargs["prompt"]={"id":config.OPENAI_PROMPT_ID}
     else:
-        kwargs["model"]=config.OPENAI_MODEL; kwargs["instructions"]=instructions; kwargs["reasoning"]={"effort":config.OPENAI_REASONING_EFFORT}
-    r=client.responses.create(**kwargs)
-    _log_usage(r,package.get("asset"),mode)
-    return _normalize_decision(extract(r.output_text),package)
+        kwargs["model"]=config.OPENAI_MODEL
+        kwargs["instructions"]=instructions
+        kwargs["reasoning"]={"effort":config.OPENAI_REASONING_EFFORT}
+
+    try:
+        r=client.responses.create(**kwargs)
+    except Exception as e:
+        info=model_budget.record_error(
+            e,reservation,"TRADE_DECISION",asset=asset,model=config.OPENAI_MODEL
+        )
+        d=model_budget.blocked_decision(
+            asset,mode,f"MODEL_API_{info.get('kind') or 'ERROR'}"
+        )
+        d["_model_api_error"]=info
+        return d
+
+    model_budget.record_success(
+        r,reservation,"TRADE_DECISION",asset=asset,
+        strategy_mode=mode,model=config.OPENAI_MODEL,
+    )
+    try:
+        d=_normalize_decision(extract(r.output_text),package)
+    except Exception:
+        d=model_budget.blocked_decision(asset,mode,"INVALID_MODEL_JSON")
+    d["_model_called"]=True
+    d["_model_budget"]=model_budget.summary()
+    return d
