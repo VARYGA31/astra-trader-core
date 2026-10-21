@@ -6,12 +6,12 @@ independent safety/risk/execution authority.
 """
 import json,re
 from datetime import datetime,timezone
-from pathlib import Path
 
 from openai import OpenAI
 
 import config
 import adaptive_memory
+import model_budget
 
 INSTRUCTIONS = """You are ASTRA Strategy Tournament v5.1 final selector, a multi-asset trading strategist.
 
@@ -171,30 +171,6 @@ def _compact_package(p):
         },
     }
 
-def _log_usage(r):
-    u=getattr(r,"usage",None)
-    if not u:
-        return
-    details=getattr(u,"input_tokens_details",None)
-    cached=getattr(details,"cached_tokens",0) if details else 0
-    row={
-        "timestamp_utc":datetime.now(timezone.utc).isoformat(),
-        "asset":"MULTI",
-        "strategy_mode":"AUTO",
-        "model":config.OPENAI_MODEL,
-        "input_tokens":getattr(u,"input_tokens",None),
-        "cached_input_tokens":cached,
-        "output_tokens":getattr(u,"output_tokens",None),
-        "total_tokens":getattr(u,"total_tokens",None),
-    }
-    try:
-        path=Path(config.STATE_DIR)/"openai_usage.jsonl"
-        path.parent.mkdir(parents=True,exist_ok=True)
-        with path.open("a",encoding="utf-8") as f:
-            f.write(json.dumps(row,ensure_ascii=False)+"\n")
-    except Exception:
-        pass
-
 def _clamp(v,lo=0.0,hi=100.0):
     try:
         x=float(v)
@@ -337,11 +313,29 @@ def decide_market(packages, trainer_candidates=None, trainer_summary=None):
         "markets":compact,
         "similar_historical_outcomes":memory,
     }
+
+    permit=model_budget.before_call(
+        "ADAPTIVE_SELECTOR",asset="MULTI",priority="normal",model=config.OPENAI_MODEL
+    )
+    if not permit.get("allowed"):
+        out=normalize({
+            "market_summary":permit.get("reason") or "MODEL_BUDGET_BLOCK",
+            "assets":[],
+            "best_opportunity":{"action":"WAIT","strategy":"WAIT"},
+        },packages)
+        out["_model_called"]=False
+        out["_model_budget"]=model_budget.summary()
+        return out
+
+    reservation=permit.get("reservation_id")
     kwargs={
         "input":"Analyze the multi-asset package and return the required JSON only:\n"+
                 json.dumps(payload,ensure_ascii=False,separators=(",",":")),
         "store":False,
-        "max_output_tokens":config.ADAPTIVE_MODEL_MAX_OUTPUT_TOKENS,
+        "max_output_tokens":min(
+            int(config.ADAPTIVE_MODEL_MAX_OUTPUT_TOKENS),
+            int(config.MODEL_MAX_OUTPUT_TOKENS),
+        ),
     }
     if config.OPENAI_PROMPT_ID:
         kwargs["prompt"]={"id":config.OPENAI_PROMPT_ID}
@@ -349,9 +343,30 @@ def decide_market(packages, trainer_candidates=None, trainer_summary=None):
         kwargs["model"]=config.OPENAI_MODEL
         kwargs["instructions"]=INSTRUCTIONS
         kwargs["reasoning"]={"effort":config.OPENAI_REASONING_EFFORT}
-    r=OpenAI().responses.create(**kwargs)
-    _log_usage(r)
+
+    try:
+        r=OpenAI().responses.create(**kwargs)
+    except Exception as e:
+        info=model_budget.record_error(
+            e,reservation,"ADAPTIVE_SELECTOR",asset="MULTI",model=config.OPENAI_MODEL
+        )
+        out=normalize({
+            "market_summary":f"MODEL_API_{info.get('kind') or 'ERROR'}",
+            "assets":[],
+            "best_opportunity":{"action":"WAIT","strategy":"WAIT"},
+        },packages)
+        out["_model_called"]=False
+        out["_model_api_error"]=info
+        out["_model_budget"]=model_budget.summary()
+        return out
+
+    model_budget.record_success(
+        r,reservation,"ADAPTIVE_SELECTOR",asset="MULTI",
+        strategy_mode="AUTO",model=config.OPENAI_MODEL,
+    )
     out=normalize(_extract(r.output_text),packages)
+    out["_model_called"]=True
+    out["_model_budget"]=model_budget.summary()
 
     # In Trainer v2 the model selects a pre-built plan; it does not invent
     # execution levels. Resolve the selected candidate and overwrite all plan
