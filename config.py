@@ -556,3 +556,16 @@ ALPHA_FACTORY_SNAPSHOT_MAX_AGE_SECONDS = int(os.getenv("ALPHA_FACTORY_SNAPSHOT_M
 MISSION_CONTROL_ENABLED = os.getenv("MISSION_CONTROL_ENABLED", "true").lower() == "true"
 MISSION_CONTROL_ACCESS_TOKEN = os.getenv("MISSION_CONTROL_ACCESS_TOKEN", "").strip()
 MISSION_CONTROL_REFRESH_SECONDS = int(os.getenv("MISSION_CONTROL_REFRESH_SECONDS", "5"))
+
+
+# ===== Shadow Agent Council v1 =====
+# Zero-token research layer inspired by multi-agent trading architectures.
+# It observes the same deterministic package as the live gate, but has no order,
+# model-call, leverage, sizing, or runtime-mode authority.
+SHADOW_AGENT_COUNCIL_ENABLED = os.getenv("SHADOW_AGENT_COUNCIL_ENABLED", "true").lower() == "true"
+SHADOW_AGENT_COUNCIL_MIN_AGREE = int(os.getenv("SHADOW_AGENT_COUNCIL_MIN_AGREE", "4"))
+SHADOW_AGENT_COUNCIL_STRONG_SCORE = float(os.getenv("SHADOW_AGENT_COUNCIL_STRONG_SCORE", "70"))
+SHADOW_AGENT_COUNCIL_RECORD_MIN_SECONDS = int(os.getenv("SHADOW_AGENT_COUNCIL_RECORD_MIN_SECONDS", "60"))
+MARKET_SCANNER_ENABLED = os.getenv("MARKET_SCANNER_ENABLED", "true").lower() == "true"
+MARKET_SCANNER_STALE_SECONDS = int(os.getenv("MARKET_SCANNER_STALE_SECONDS", "10800"))
+MARKET_SCANNER_TOP_N = int(os.getenv("MARKET_SCANNER_TOP_N", "5"))
