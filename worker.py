@@ -321,7 +321,7 @@ def main():
                         gate=gate_module.evaluate(p,force_event=a in high)
                         stage=f"shadow_council:{a}"
                         council=agent_council.evaluate(p,gate)
-                        agent_council.record(council)
+                        agent_council.record(council,p)
                         p["shadow_council"]=council
                         R["market_scanner"]=market_scanner.summary()
                         R["shadow_agent_council"]=agent_council.summary()
