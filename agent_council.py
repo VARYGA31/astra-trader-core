@@ -27,6 +27,7 @@ EXECUTION_AUTHORITY=False
 
 LOCK=threading.RLock()
 LOG=Path(config.STATE_DIR)/"shadow_agent_council.jsonl"
+OUTCOMES=Path(config.STATE_DIR)/"shadow_agent_council_outcomes.jsonl"
 STATE=Path(config.STATE_DIR)/"shadow_agent_council_state.json"
 
 AGENT_META={
@@ -267,41 +268,127 @@ def _load_state():
         return x if isinstance(x,dict) else {}
     except Exception:return {}
 
+def _append_jsonl(path,row):
+    path.parent.mkdir(parents=True,exist_ok=True)
+    with path.open("a",encoding="utf-8") as f:
+        f.write(json.dumps(row,ensure_ascii=False,separators=(",",":"))+"\n")
+
+def _read_jsonl(path,limit=5000):
+    rows=[]
+    try:
+        with path.open("r",encoding="utf-8") as f:
+            for line in f:
+                try:
+                    x=json.loads(line)
+                    if isinstance(x,dict):rows.append(x)
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return rows[-max(1,int(limit)):]
+
+def _reference_price(package):
+    market=((package or {}).get("decision_context") or {}).get("market") or {}
+    spot=market.get("spot") or {}
+    perp=market.get("perp_okx") or {}
+    return _num(spot.get("price") or perp.get("last_price"))
+
+def _eval_minutes(mode):
+    return int(config.SHADOW_AGENT_COUNCIL_MICRO_EVAL_MINUTES) if str(mode or "").upper()=="MICRO" else int(config.SHADOW_AGENT_COUNCIL_NORMAL_EVAL_MINUTES)
+
+def _settle_pending(st,asset,current_price):
+    if current_price is None or current_price<=0:
+        return 0
+    now=_now()
+    pending=list(st.get("pending") or [])
+    keep=[];done=0
+    for x in pending:
+        if str(x.get("asset") or "").upper()!=asset:
+            keep.append(x);continue
+        try:
+            due=datetime.fromisoformat(str(x.get("due_at_utc") or "").replace("Z","+00:00"))
+        except Exception:
+            due=None
+        if due is None or due>now:
+            keep.append(x);continue
+        entry=_num(x.get("reference_price"))
+        direction=str(x.get("target_direction") or "").upper()
+        if not entry or direction not in {"LONG","SHORT"}:
+            continue
+        raw=(current_price-entry)/entry*100.0
+        signed=raw if direction=="LONG" else -raw
+        out={
+            **x,
+            "evaluated_at_utc":now.isoformat(),
+            "exit_reference_price":current_price,
+            "raw_return_pct":round(raw,6),
+            "directional_return_pct":round(signed,6),
+            "directional_hit":bool(signed>0),
+        }
+        _append_jsonl(OUTCOMES,out);done+=1
+    st["pending"]=keep[-max(1,int(config.SHADOW_AGENT_COUNCIL_MAX_PENDING)):]
+    st["evaluated_total"]=int(st.get("evaluated_total",0))+done
+    return done
+
 def _save_state(x):
     STATE.parent.mkdir(parents=True,exist_ok=True)
     tmp=STATE.with_name(f"{STATE.name}.{threading.get_ident()}.{int(_now().timestamp()*1_000_000)}.tmp")
     tmp.write_text(json.dumps(x,ensure_ascii=False,indent=2),encoding="utf-8")
     tmp.replace(STATE)
 
-def record(result):
+def record(result,package=None):
     if not config.SHADOW_AGENT_COUNCIL_ENABLED or not isinstance(result,dict):
         return {"status":"DISABLED"}
     asset=str(result.get("asset") or "").upper()
     if not asset:return {"status":"IGNORED","reason":"NO_ASSET"}
+    current_price=_reference_price(package)
     with LOCK:
         st=_load_state()
+        settled=_settle_pending(st,asset,current_price)
+
         old=(st.get("latest_by_asset") or {}).get(asset) or {}
         try:
             old_ts=datetime.fromisoformat(str(old.get("generated_at_utc") or "").replace("Z","+00:00"))
             age=(_now()-old_ts).total_seconds()
         except Exception:
             age=999999
-        if age<float(config.SHADOW_AGENT_COUNCIL_RECORD_MIN_SECONDS) and old.get("status")==result.get("status") and old.get("target_direction")==result.get("target_direction"):
-            st.setdefault("latest_by_asset",{})[asset]=result
-            _save_state(st)
-            return {"status":"DEDUPED"}
-
-        LOG.parent.mkdir(parents=True,exist_ok=True)
-        with LOG.open("a",encoding="utf-8") as f:
-            f.write(json.dumps(result,ensure_ascii=False,separators=(",",":"))+"\n")
+        deduped=age<float(config.SHADOW_AGENT_COUNCIL_RECORD_MIN_SECONDS) and old.get("status")==result.get("status") and old.get("target_direction")==result.get("target_direction")
         st.setdefault("latest_by_asset",{})[asset]=result
-        st["last"]=result
-        st["recorded_total"]=int(st.get("recorded_total",0))+1
-        counts=st.setdefault("status_counts",{})
-        k=str(result.get("status") or "UNKNOWN")
-        counts[k]=int(counts.get(k,0))+1
+
+        if not deduped:
+            _append_jsonl(LOG,result)
+            st["last"]=result
+            st["recorded_total"]=int(st.get("recorded_total",0))+1
+            counts=st.setdefault("status_counts",{})
+            k=str(result.get("status") or "UNKNOWN")
+            counts[k]=int(counts.get(k,0))+1
+
+            direction=str(result.get("target_direction") or "").upper()
+            if current_price and current_price>0 and direction in {"LONG","SHORT"}:
+                mode=str(result.get("strategy_mode") or "NORMAL").upper()
+                created=_now()
+                mins=max(1,_eval_minutes(mode))
+                candidate={
+                    "candidate_id":f"{asset}:{int(created.timestamp())}:{st['recorded_total']}",
+                    "created_at_utc":created.isoformat(),
+                    "due_at_utc":datetime.fromtimestamp(created.timestamp()+mins*60,tz=timezone.utc).isoformat(),
+                    "horizon_minutes":mins,
+                    "asset":asset,
+                    "strategy_mode":mode,
+                    "council_status":result.get("status"),
+                    "council_score":result.get("council_score"),
+                    "agree_count":result.get("agree_count"),
+                    "oppose_count":result.get("oppose_count"),
+                    "veto_count":result.get("veto_count"),
+                    "target_direction":direction,
+                    "reference_price":current_price,
+                    "shadow_candidate":bool(result.get("shadow_candidate")),
+                }
+                st.setdefault("pending",[]).append(candidate)
+                st["pending"]=st["pending"][-max(1,int(config.SHADOW_AGENT_COUNCIL_MAX_PENDING)):]
+
         _save_state(st)
-        return {"status":"OK"}
+        return {"status":"DEDUPED" if deduped else "OK","settled":settled}
 
 def summary():
     if not config.SHADOW_AGENT_COUNCIL_ENABLED:
@@ -310,10 +397,27 @@ def summary():
         st=_load_state()
     latest=st.get("latest_by_asset") or {}
     strong=[x for x in latest.values() if isinstance(x,dict) and x.get("status")=="STRONG_CONSENSUS"]
+    outcomes=_read_jsonl(OUTCOMES,5000)
+    by_status={}
+    for x in outcomes:
+        k=str(x.get("council_status") or "UNKNOWN")
+        d=by_status.setdefault(k,{"samples":0,"hits":0,"sum_directional_return_pct":0.0})
+        d["samples"]+=1
+        d["hits"]+=1 if x.get("directional_hit") else 0
+        d["sum_directional_return_pct"]+=float(x.get("directional_return_pct") or 0.0)
+    for d in by_status.values():
+        n=d["samples"]
+        d["hit_rate_pct"]=round(100.0*d["hits"]/n,2) if n else 0.0
+        d["avg_directional_return_pct"]=round(d["sum_directional_return_pct"]/n,5) if n else 0.0
+        d.pop("sum_directional_return_pct",None)
     return {
         "status":"OK",
         "recorded_total":int(st.get("recorded_total",0)),
+        "evaluated_total":len(outcomes),
+        "pending_total":len(st.get("pending") or []),
         "status_counts":st.get("status_counts") or {},
+        "outcome_metrics_by_status":by_status,
+        "recent_outcomes":outcomes[-20:],
         "last":st.get("last"),
         "latest_by_asset":latest,
         "strong_assets":[x.get("asset") for x in strong],
@@ -321,6 +425,7 @@ def summary():
         "order_capability":False,
         "model_call_capability":False,
         "execution_authority":False,
+        "outcome_note":"Forward directional-return proxy only; not trade PnL or proof of edge.",
     }
 
 if __name__=="__main__":
