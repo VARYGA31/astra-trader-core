@@ -7,6 +7,8 @@ def test_mission_control_is_read_only():
     assert "ASTRA · MISSION CONTROL" in html
     assert "READ ONLY" in html
     assert "/api/mission-control" in html
+    assert "THE COUNCIL" in html
+    assert "VEGA SCANNER" in html
     for forbidden in ("/trade","/order","/leverage","/risk-update","open_fok"):
         assert forbidden not in html,forbidden
 
@@ -30,6 +32,8 @@ def test_payload_contains_safe_research_layers():
     assert "normal_assets" in x["universe"],x
     assert "model_budget" in x,x
     assert "status" in x["model_budget"],x
+    assert "shadow_agent_council" in x,x
+    assert "market_scanner" in x,x
 
 if __name__=="__main__":
     test_mission_control_is_read_only()
