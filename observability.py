@@ -245,6 +245,16 @@ def record_decision(package, gate, decision, execution, model_called=False):
                 "status": exec_status,
                 "reason": exec_reason,
                 "stage": execution.get("stage"),
+                "error_type":execution.get("error_type"),
+                "error":str(execution.get("error") or "")[:500] or None,
+                "drift_pct":execution.get("drift_pct"),
+                "maximum_pct":execution.get("maximum_pct"),
+                "planned_entry":execution.get("planned_entry"),
+                "current_price":execution.get("current_price"),
+                "price_source":execution.get("price_source"),
+                "snapshot_swap_price":execution.get("snapshot_swap_price"),
+                "tradability_reason":((execution.get("tradability") or {}).get("reason")),
+                "tradability_instrument":((execution.get("tradability") or {}).get("instrument")),
                 "micro_net_edge":(
                     (execution.get("micro_net_edge") or {})
                     or ((execution.get("execution_quality") or {}).get("micro_net_edge") or {})
@@ -496,6 +506,7 @@ def _decision_funnel(since_utc=None):
         "skip_reasons":defaultdict(int),
         "wait_categories":defaultdict(int),
         "trade_rejection_reasons":defaultdict(int),
+        "last_rejection":None,
     })
     by_mode=defaultdict(lambda:{"decisions":0,"model_calls":0,"model_skips":0,"model_waits":0,"opened":0})
     model_calls=0
@@ -533,6 +544,21 @@ def _decision_funnel(since_utc=None):
             reject_reason=str(ex.get("reason") or status or "UNKNOWN_REJECTION")
             rejects[reject_reason]+=1
             a["trade_rejection_reasons"][reject_reason]+=1
+            a["last_rejection"]={
+                "timestamp_utc":x.get("timestamp_utc"),
+                "reason":reject_reason,
+                "stage":ex.get("stage"),
+                "error_type":ex.get("error_type"),
+                "error":ex.get("error"),
+                "drift_pct":ex.get("drift_pct"),
+                "maximum_pct":ex.get("maximum_pct"),
+                "planned_entry":ex.get("planned_entry"),
+                "current_price":ex.get("current_price"),
+                "price_source":ex.get("price_source"),
+                "snapshot_swap_price":ex.get("snapshot_swap_price"),
+                "tradability_reason":ex.get("tradability_reason"),
+                "tradability_instrument":ex.get("tradability_instrument"),
+            }
 
     asset_out={}
     for asset,a in by_asset.items():
@@ -577,6 +603,14 @@ def recent_closed(limit=5):
             "strategy_mode":e.get("strategy_mode") or "NORMAL",
             "entry":e.get("entry"),
             "exit_price":e.get("exit_price"),
+            "stop_loss":e.get("stop_loss"),
+            "notional_usd":e.get("notional_usd"),
+            "leverage":e.get("leverage"),
+            "confidence":e.get("confidence"),
+            "mtf_quality":e.get("mtf_quality"),
+            "trade_quality":e.get("trade_quality"),
+            "fill_slippage_pct":e.get("fill_slippage_pct"),
+            "opened_at_utc":e.get("opened_at_utc"),
         })
     return out
 
