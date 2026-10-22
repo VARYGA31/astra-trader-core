@@ -492,7 +492,10 @@ def _decision_funnel(since_utc=None):
     skips=defaultdict(int)
     rejects=defaultdict(int)
     by_asset=defaultdict(lambda:{
-        "decisions":0,"model_calls":0,"model_skips":0,"model_waits":0,"opened":0
+        "decisions":0,"model_calls":0,"model_skips":0,"model_waits":0,"opened":0,
+        "skip_reasons":defaultdict(int),
+        "wait_categories":defaultdict(int),
+        "trade_rejection_reasons":defaultdict(int),
     })
     by_mode=defaultdict(lambda:{"decisions":0,"model_calls":0,"model_skips":0,"model_waits":0,"opened":0})
     model_calls=0
@@ -514,17 +517,31 @@ def _decision_funnel(since_utc=None):
                 model_waits+=1;a["model_waits"]+=1;m["model_waits"]+=1
                 cat=str(md.get("wait_category") or "UNCLASSIFIED_LEGACY")
                 wait_categories[cat]+=1
+                a["wait_categories"][cat]+=1
                 wait_hardness["HARD" if bool(md.get("wait_is_hard_blocker")) else "SOFT_OR_UNSPECIFIED"]+=1
         else:
             model_skips+=1;a["model_skips"]+=1;m["model_skips"]+=1
-            skips[str(x.get("gate_reason") or "UNKNOWN_SKIP")]+=1
+            skip_reason=str(x.get("gate_reason") or "UNKNOWN_SKIP")
+            skips[skip_reason]+=1
+            a["skip_reasons"][skip_reason]+=1
 
         ex=x.get("execution") or {}
         status=ex.get("status")
         if status in {"OKX_DEMO_OPENED","PAPER_OPENED","PAPER_POSITION_OPENED","OPENED"}:
             opened+=1;a["opened"]+=1;m["opened"]+=1
         elif x.get("model_called") and str((x.get("model_decision") or {}).get("action","")).upper() in {"LONG","SHORT"}:
-            rejects[str(ex.get("reason") or status or "UNKNOWN_REJECTION")]+=1
+            reject_reason=str(ex.get("reason") or status or "UNKNOWN_REJECTION")
+            rejects[reject_reason]+=1
+            a["trade_rejection_reasons"][reject_reason]+=1
+
+    asset_out={}
+    for asset,a in by_asset.items():
+        asset_out[asset]={
+            **{k:v for k,v in a.items() if k not in {"skip_reasons","wait_categories","trade_rejection_reasons"}},
+            "skip_reasons":dict(sorted(a["skip_reasons"].items(),key=lambda kv:(-kv[1],kv[0]))),
+            "wait_categories":dict(sorted(a["wait_categories"].items(),key=lambda kv:(-kv[1],kv[0]))),
+            "trade_rejection_reasons":dict(sorted(a["trade_rejection_reasons"].items(),key=lambda kv:(-kv[1],kv[0]))),
+        }
 
     return {
         "since_utc":since_utc,
@@ -537,7 +554,7 @@ def _decision_funnel(since_utc=None):
         "opened_trades":opened,
         "skip_reasons":dict(sorted(skips.items(),key=lambda kv:(-kv[1],kv[0]))),
         "trade_rejection_reasons":dict(sorted(rejects.items(),key=lambda kv:(-kv[1],kv[0]))),
-        "by_asset":dict(by_asset),
+        "by_asset":asset_out,
         "by_strategy_mode":dict(by_mode),
     }
 
@@ -545,6 +562,36 @@ def recent_shadow(limit=None):
     limit=int(limit or config.ANALYTICS_RECENT_LIMIT)
     rows=_load_jsonl(SHADOW)
     return rows[-limit:]
+
+def recent_closed(limit=5):
+    closes=_dedupe_closes(_load_jsonl(TRADE_JOURNAL))
+    out=[]
+    for e in closes[-max(1,int(limit)):]:
+        out.append({
+            "timestamp_utc":e.get("timestamp_utc"),
+            "asset":e.get("asset"),
+            "side":e.get("side"),
+            "pnl_usd":e.get("pnl_usd"),
+            "reason":e.get("reason"),
+            "setup_type":e.get("setup_type"),
+            "strategy_mode":e.get("strategy_mode") or "NORMAL",
+            "entry":e.get("entry"),
+            "exit_price":e.get("exit_price"),
+        })
+    return out
+
+def diagnostic_digest(hours=24,recent_closed_limit=5):
+    try:
+        since=(datetime.now(timezone.utc)-timedelta(hours=float(hours))).isoformat()
+    except Exception:
+        since=None
+    return {
+        "window_hours":hours,
+        "since_utc":since,
+        "decision_funnel":_decision_funnel(since),
+        "trade_performance":trade_performance(since),
+        "recent_closed":recent_closed(recent_closed_limit),
+    }
 
 def health_summary():
     s=load_state()
