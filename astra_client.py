@@ -90,6 +90,16 @@ def _compact_mtf(mtf,mode):
 def _compact(p):
     dc=p.get("decision_context",{}); m=dc.get("market",{}); n=dc.get("news",{})
     mode=str(p.get("strategy_mode") or "NORMAL").upper()
+    asset=str(p.get("asset") or "").upper()
+    if asset=="XAU":
+        asset_min_conf=float(config.XAU_MIN_TRADE_CONFIDENCE)
+        asset_min_quality=float(config.XAU_MTF_MIN_QUALITY)
+    elif asset in set(config.DEFI_TRADE_WATCHLIST):
+        asset_min_conf=float(config.DEFI_TRADE_MIN_CONFIDENCE)
+        asset_min_quality=float(config.DEFI_TRADE_MIN_QUALITY)
+    else:
+        asset_min_conf=float(config.MIN_TRADE_CONFIDENCE)
+        asset_min_quality=float(config.MTF_MIN_QUALITY)
     ev=[]
     for e in n.get("events",[])[:config.MAX_MODEL_NEWS_EVENTS]:
         ev.append({k:e.get(k) for k in ("id","source","verification_status","published_at_utc","title","event_type","impact_hint","trade_usable")})
@@ -99,6 +109,10 @@ def _compact(p):
         "normal_min_trade_confidence":config.MIN_TRADE_CONFIDENCE,
         "transition_min_trade_confidence":config.MTF_TRANSITION_MIN_CONFIDENCE,
         "xau_min_trade_confidence":config.XAU_MIN_TRADE_CONFIDENCE,
+        "defi_min_trade_confidence":config.DEFI_TRADE_MIN_CONFIDENCE,
+        "defi_min_mtf_quality":config.DEFI_TRADE_MIN_QUALITY,
+        "asset_min_trade_confidence":asset_min_conf,
+        "asset_min_mtf_quality":asset_min_quality,
         "scalp_prime_min_trade_confidence":config.SCALP_MIN_TRADE_CONFIDENCE,
         "scalp_fast_min_trade_confidence":config.SCALP_FAST_MIN_TRADE_CONFIDENCE,
         "scalp_prime_min_tp1_r":config.SCALP_MIN_TP1_R,
@@ -141,6 +155,26 @@ def _normalize_decision(d,package):
     d["timeframe"]=d.get("timeframe") or package.get("timeframe") or ("1m" if mode=="MICRO" else "5m" if mode=="SCALP" else config.TRADING_TIMEFRAME)
     d["strategy_mode"]=mode
     d["setup_type"]=str(d.get("setup_type","NONE")).upper()
+
+    # Entry is an execution datum, not a model opinion. For immediate FOK
+    # execution ASTRA always anchors LONG/SHORT to the OKX perpetual snapshot
+    # the model actually received. Preserve the raw model entry for forensics.
+    d["model_entry_raw"]=d.get("entry")
+    d["entry_reference_source"]="MODEL_ENTRY_FALLBACK"
+    if d["action"] in {"LONG","SHORT"}:
+        try:
+            snap=(
+                package.get("decision_context",{})
+                .get("market",{})
+                .get("perp_okx",{})
+                .get("last_price")
+            )
+            snap=float(snap)
+            if snap>0:
+                d["entry"]=snap
+                d["entry_reference_source"]="OKX_PERP_SNAPSHOT"
+        except Exception:
+            pass
     d["decision_policy_version"]="micro_v2" if mode=="MICRO" else "scalp_v2" if mode=="SCALP" else "normal_cal_v1"
     if mode=="SCALP":
         d["scalp_tier"]=str(package.get("model_gate",{}).get("scalp_tier") or package.get("model_gate",{}).get("mtf",{}).get("tier") or "PRIME").upper()
