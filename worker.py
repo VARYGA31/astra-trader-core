@@ -61,6 +61,9 @@ def _heartbeat(mode):
         stream=micro_market_stream.health()
         second_shadow=micro_second_shadow.summary()
         af=alpha_factory.summary()
+        diag24=observability.diagnostic_digest(24,5)
+        funnel24=diag24.get("decision_funnel") or {}
+        perf24=diag24.get("trade_performance") or {}
         payload={
             "event":"ASTRA_HEARTBEAT",
             "at_utc":now().isoformat(),
@@ -89,6 +92,18 @@ def _heartbeat(mode):
                 "net_pnl_usd":overall.get("net_pnl_usd",0),
                 "profit_factor":overall.get("profit_factor"),
                 "avg_r":overall.get("avg_r"),
+            },
+            "diagnostics_24h":{
+                "decisions":funnel24.get("decisions",0),
+                "model_calls":funnel24.get("model_calls",0),
+                "model_skips":funnel24.get("model_skips",0),
+                "model_waits":funnel24.get("model_waits",0),
+                "opened_trades":funnel24.get("opened_trades",0),
+                "skip_reasons":funnel24.get("skip_reasons") or {},
+                "trade_rejection_reasons":funnel24.get("trade_rejection_reasons") or {},
+                "by_asset":funnel24.get("by_asset") or {},
+                "trades_by_asset":(perf24.get("by_asset") or {}),
+                "recent_closed":diag24.get("recent_closed") or [],
             },
             "shadow_lab_status":crypto_shadow_lab.STATE.get("status"),
             "model_budget":{
