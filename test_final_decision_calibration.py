@@ -43,6 +43,38 @@ assert soft_wait["action"]=="WAIT"
 assert soft_wait["wait_category"]=="UNSPECIFIED"
 assert soft_wait["wait_is_hard_blocker"] is False
 
+# Immediate FOK entries are deterministic: the model may omit or hallucinate
+# entry, but Python anchors the actionable decision to the OKX perp snapshot.
+uni_pkg={
+    "asset":"UNI","strategy_mode":"NORMAL",
+    "decision_context":{"market":{"perp_okx":{"last_price":"7.025"}}},
+}
+uni=astra_client._normalize_decision({
+    "asset":"UNI","action":"LONG","confidence":91,
+    "entry":None,"stop_loss":6.95,"take_profit_1":7.15,"take_profit_2":7.25,
+    "setup_type":"TREND_CONTINUATION",
+},uni_pkg)
+assert uni["entry"]==7.025,uni
+assert uni["model_entry_raw"] is None,uni
+assert uni["entry_reference_source"]=="OKX_PERP_SNAPSHOT",uni
+
+xau_pkg={
+    "asset":"XAU","strategy_mode":"NORMAL",
+    "decision_context":{"market":{"perp_okx":{"last_price":"4118.5"}}},
+}
+xau=astra_client._normalize_decision({
+    "asset":"XAU","action":"SHORT","confidence":90,
+    "entry":3999.0,"stop_loss":4140.0,"take_profit_1":4080.0,"take_profit_2":4050.0,
+    "setup_type":"TREND_CONTINUATION",
+},xau_pkg)
+assert xau["entry"]==4118.5,xau
+assert xau["model_entry_raw"]==3999.0,xau
+assert xau["entry_reference_source"]=="OKX_PERP_SNAPSHOT",xau
+
+compact=astra_client._compact(uni_pkg)
+assert compact["decision_policy"]["defi_min_trade_confidence"]==astra_client.config.DEFI_TRADE_MIN_CONFIDENCE
+assert compact["decision_policy"]["asset_min_trade_confidence"]==astra_client.config.DEFI_TRADE_MIN_CONFIDENCE
+
 print(json.dumps({
     "status":"OK",
     "will_open_order":False,
