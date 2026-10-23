@@ -262,7 +262,12 @@ function render(d){
  $('alphaStatus').textContent=champs+' shadow champions · '+prom+' promising';
  $('alphaBar').style.width=Math.min(100,Math.max(3,(a.evidence_rows||0)/50))+'%';
  $('openPos').textContent=s.open_positions??'—'; $('execution').textContent=(s.execution_mode||'—')+' · execution '+(s.trade_execution?'ON':'OFF');
- $('modelSpend').textContent='
+ $('modelSpend').textContent=money(md.estimated_cost_usd||0);
+ $('modelBudgetMeta').textContent=(md.calls||0)+' / '+(md.max_calls||0)+' calls · '+fmt(md.cost_remaining_usd,2)+' USD left';
+ const maxCost=Number(md.max_cost_usd||0), spent=Number(md.estimated_cost_usd||0);
+ $('modelBudgetBar').style.width=(maxCost>0?Math.min(100,Math.max(0,spent/maxCost*100)):0)+'%';
+ $('evidence').textContent=(a.evidence_rows||0)+' evidence';
+ $('factoryAge').textContent=a.snapshot_age_seconds==null?'collecting':'snapshot '+Math.round(a.snapshot_age_seconds)+'s';
  const uni=d.universe||{}; $('markets').innerHTML=(uni.normal_assets||[]).map(x=>'<span class="chip">'+x+'</span>').join('');
  const m=(d.micro||{}).stats_6h||{}; $('microChecks').textContent=m.checks??0;$('microCalls').textContent=m.model_calls??0;$('microOpened').textContent=m.opened_trades??0;$('microPnl').textContent=money(m.realized_net_pnl_usd||0);
  const blockers=(d.diagnostics||{}).top_skip_reasons||[];$('blockers').innerHTML=blockers.slice(0,6).map(x=>'<div class="row"><span class="muted">'+x.name+'</span><b>'+x.value+'</b></div>').join('')||'<span class="muted">нет данных</span>';

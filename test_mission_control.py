@@ -9,6 +9,10 @@ def test_mission_control_is_read_only():
     assert "/api/mission-control" in html
     assert "THE COUNCIL" in html
     assert "VEGA SCANNER" in html
+    assert "modelBudgetMeta" in html
+    assert "estimated_cost_usd" in html
+    assert "cost_remaining_usd" in html
+    assert "evidence_rows" in html
     for forbidden in ("/trade","/order","/leverage","/risk-update","open_fok"):
         assert forbidden not in html,forbidden
 
