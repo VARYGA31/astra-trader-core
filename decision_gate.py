@@ -3,6 +3,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 import config
+from okx_demo_adapter import OKXDemoAdapter
 
 STATE_FILE = Path(config.STATE_DIR) / "decision_gate_state.json"
 
@@ -11,6 +12,39 @@ DEFI_SECURITY_WORDS=(
     "oracle attack","oracle failure","depeg","de-peg","compromised",
     "emergency pause","security incident","stolen funds"
 )
+
+def _defi_account_tradability_guard(package):
+    asset=str((package or {}).get("asset") or "").upper()
+    if asset not in set(config.DEFI_TRADE_WATCHLIST):
+        return None
+    if str((package or {}).get("execution_mode") or config.EXECUTION_MODE).lower() != "okx_demo":
+        return None
+    try:
+        tradability=OKXDemoAdapter().account_tradability(asset)
+    except Exception as e:
+        return {
+            "call_model":False,
+            "reason":"DEFI_ACCOUNT_TRADABILITY_CHECK_FAILED",
+            "tradability":{
+                "available":False,
+                "reason":"UNCAUGHT_ACCOUNT_TRADABILITY_ERROR",
+                "instrument":asset,
+                "error_type":type(e).__name__,
+                "error":str(e)[:500],
+            },
+        }
+    if tradability.get("available"):
+        return None
+    reason=(
+        "DEFI_ACCOUNT_INSTRUMENT_UNAVAILABLE"
+        if tradability.get("reason")=="ACCOUNT_INSTRUMENT_UNAVAILABLE"
+        else "DEFI_ACCOUNT_TRADABILITY_CHECK_FAILED"
+    )
+    return {
+        "call_model":False,
+        "reason":reason,
+        "tradability":tradability,
+    }
 
 def _defi_pretrade_guard(package):
     asset=str((package or {}).get("asset") or "").upper()
@@ -263,6 +297,14 @@ def evaluate(package, force_event=False):
         and str(mtf.get("mode") or "").upper()=="TRANSITION"
     ):
         return {"call_model":False,"reason":"DEFI_TRANSITION_NOT_ALLOWED","mtf":mtf}
+
+    # Only spend a model call on DeFi when the authenticated demo account can
+    # actually see the swap. This is deliberately after MTF so ordinary rejected
+    # setups do not create extra private API traffic.
+    defi_account_guard=_defi_account_tradability_guard(package)
+    if defi_account_guard:
+        defi_account_guard["mtf"]=mtf
+        return defi_account_guard
 
     # For gold, do not enter in the first few minutes after a fresh verified
     # high-impact macro headline. Wait for price discovery / 15m confirmation.

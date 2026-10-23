@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, json
+import sys, json, time
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -231,22 +231,60 @@ def execute(decision):
     market_ctx=p.get("decision_context",{}).get("market",{})
     spot_price=market_ctx.get("spot",{}).get("price")
     snapshot_swap_price=market_ctx.get("perp_okx",{}).get("last_price")
+    snapshot_at_utc=market_ctx.get("generated_at_utc")
+    planned_raw=decision.get("entry")
     try:
-        planned=float(decision.get("entry"))
+        planned=float(planned_raw)
+    except Exception as e:
+        return {
+            "status":"REJECTED",
+            "reason":"ENTRY_PRICE_UNAVAILABLE",
+            "stage":"PLANNED_ENTRY_PARSE",
+            "error_type":type(e).__name__,
+            "error":str(e)[:500],
+            "planned_entry_raw":planned_raw,
+            "snapshot_swap_price":snapshot_swap_price,
+            "snapshot_at_utc":snapshot_at_utc,
+            "model_started_at_utc":decision.get("_model_started_at_utc"),
+            "model_finished_at_utc":decision.get("_model_finished_at_utc"),
+            "model_latency_ms":decision.get("_model_latency_ms"),
+        }
+
+    ticker_started_at_utc=datetime.now(timezone.utc).isoformat()
+    ticker_t0=time.monotonic()
+    try:
         if config.EXECUTION_MODE=="okx_demo":
-            current=float(OKXDemoAdapter().ticker(asset))
-            execution_price_source="OKX_SWAP_LIVE_TICKER"
+            adapter=OKXDemoAdapter()
+            current,execution_price_source=adapter.ticker_with_source(asset)
+            current=float(current)
         else:
             current=float(snapshot_swap_price or spot_price)
             execution_price_source="SNAPSHOT_REFERENCE"
+        ticker_latency_ms=round((time.monotonic()-ticker_t0)*1000.0,2)
+        ticker_finished_at_utc=datetime.now(timezone.utc).isoformat()
         drift=abs(current-planned)/current*100
-    except Exception:
-        return {"status":"REJECTED","reason":"ENTRY_PRICE_UNAVAILABLE"}
+    except Exception as e:
+        return {
+            "status":"REJECTED",
+            "reason":"ENTRY_PRICE_UNAVAILABLE",
+            "stage":"OKX_FRESH_TICKER" if config.EXECUTION_MODE=="okx_demo" else "SNAPSHOT_REFERENCE_PARSE",
+            "error_type":type(e).__name__,
+            "error":str(e)[:500],
+            "planned_entry":planned,
+            "snapshot_swap_price":snapshot_swap_price,
+            "snapshot_at_utc":snapshot_at_utc,
+            "ticker_started_at_utc":ticker_started_at_utc,
+            "ticker_latency_ms":round((time.monotonic()-ticker_t0)*1000.0,2),
+            "model_started_at_utc":decision.get("_model_started_at_utc"),
+            "model_finished_at_utc":decision.get("_model_finished_at_utc"),
+            "model_latency_ms":decision.get("_model_latency_ms"),
+        }
 
     if drift>config.ENTRY_DRIFT_MAX_PCT:
         return {
             "status":"REJECTED",
             "reason":"ENTRY_PRICE_DRIFT",
+            "stage":"ENTRY_DRIFT_GUARD",
             "drift_pct":drift,
             "maximum_pct":config.ENTRY_DRIFT_MAX_PCT,
             "planned_entry":planned,
@@ -254,6 +292,13 @@ def execute(decision):
             "price_source":execution_price_source,
             "spot_price":spot_price,
             "snapshot_swap_price":snapshot_swap_price,
+            "snapshot_at_utc":snapshot_at_utc,
+            "ticker_started_at_utc":ticker_started_at_utc,
+            "ticker_finished_at_utc":ticker_finished_at_utc,
+            "ticker_latency_ms":ticker_latency_ms,
+            "model_started_at_utc":decision.get("_model_started_at_utc"),
+            "model_finished_at_utc":decision.get("_model_finished_at_utc"),
+            "model_latency_ms":decision.get("_model_latency_ms"),
         }
 
     decision["planned_entry"]=planned
@@ -317,6 +362,13 @@ def execute(decision):
         "execution_entry_reference":current,
         "execution_price_source":execution_price_source,
         "entry_drift_pct":drift,
+        "snapshot_at_utc":snapshot_at_utc,
+        "model_started_at_utc":decision.get("_model_started_at_utc"),
+        "model_finished_at_utc":decision.get("_model_finished_at_utc"),
+        "model_latency_ms":decision.get("_model_latency_ms"),
+        "ticker_started_at_utc":ticker_started_at_utc,
+        "ticker_finished_at_utc":ticker_finished_at_utc,
+        "ticker_latency_ms":ticker_latency_ms,
         "trainer_rebase":decision.get("trainer_rebase"),
     }
 

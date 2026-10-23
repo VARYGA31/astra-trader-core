@@ -1,4 +1,5 @@
-import json,re
+import json,re,time
+from datetime import datetime, timezone
 from openai import OpenAI
 import config
 import model_budget
@@ -224,9 +225,13 @@ def decide(package):
         kwargs["instructions"]=instructions
         kwargs["reasoning"]={"effort":config.OPENAI_REASONING_EFFORT}
 
+    model_started_at_utc=datetime.now(timezone.utc).isoformat()
+    model_t0=time.monotonic()
     try:
         r=client.responses.create(**kwargs)
     except Exception as e:
+        model_finished_at_utc=datetime.now(timezone.utc).isoformat()
+        model_latency_ms=round((time.monotonic()-model_t0)*1000.0,2)
         info=model_budget.record_error(
             e,reservation,"TRADE_DECISION",asset=asset,model=config.OPENAI_MODEL
         )
@@ -234,8 +239,16 @@ def decide(package):
             asset,mode,f"MODEL_API_{info.get('kind') or 'ERROR'}"
         )
         d["_model_api_error"]=info
+        d["_model_started_at_utc"]=model_started_at_utc
+        d["_model_finished_at_utc"]=model_finished_at_utc
+        d["_model_latency_ms"]=model_latency_ms
+        d["_entry_snapshot_at_utc"]=(
+            package.get("decision_context",{}).get("market",{}).get("generated_at_utc")
+        )
         return d
 
+    model_finished_at_utc=datetime.now(timezone.utc).isoformat()
+    model_latency_ms=round((time.monotonic()-model_t0)*1000.0,2)
     model_budget.record_success(
         r,reservation,"TRADE_DECISION",asset=asset,
         strategy_mode=mode,model=config.OPENAI_MODEL,
@@ -245,5 +258,11 @@ def decide(package):
     except Exception:
         d=model_budget.blocked_decision(asset,mode,"INVALID_MODEL_JSON")
     d["_model_called"]=True
+    d["_model_started_at_utc"]=model_started_at_utc
+    d["_model_finished_at_utc"]=model_finished_at_utc
+    d["_model_latency_ms"]=model_latency_ms
+    d["_entry_snapshot_at_utc"]=(
+        package.get("decision_context",{}).get("market",{}).get("generated_at_utc")
+    )
     d["_model_budget"]=model_budget.summary()
     return d

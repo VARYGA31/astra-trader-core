@@ -84,6 +84,22 @@ class OKXDemoAdapter:
         r.raise_for_status()
         return self._check(r.json())
 
+    def market_get(self, path, params=None):
+        """Unauthenticated public market-data fallback.
+
+        Demo trading still uses signed private requests with x-simulated-trading=1.
+        Market data itself is public; keeping a no-simulation fallback prevents a
+        demo-specific public response quirk from making a tradable instrument look
+        price-less while preserving demo-only order submission.
+        """
+        r = self.session.get(
+            self.base + path,
+            params=params or {},
+            timeout=15,
+        )
+        r.raise_for_status()
+        return self._check(r.json())
+
     def balance(self):
         return self.private_get("/api/v5/account/balance")
 
@@ -101,9 +117,28 @@ class OKXDemoAdapter:
 
     def instrument(self, asset):
         inst = self.inst_id(asset)
-        data = self.public_get("/api/v5/public/instruments", {"instType":"SWAP","instId":inst}).get("data", [])
+        data = []
+        first_error = None
+        try:
+            data = self.public_get(
+                "/api/v5/public/instruments",
+                {"instType":"SWAP","instId":inst},
+            ).get("data", [])
+        except Exception as e:
+            first_error = f"{type(e).__name__}:{str(e)[:300]}"
         if not data:
-            raise RuntimeError(f"OKX_INSTRUMENT_UNAVAILABLE:{inst}")
+            try:
+                data = self.market_get(
+                    "/api/v5/public/instruments",
+                    {"instType":"SWAP","instId":inst},
+                ).get("data", [])
+            except Exception as e:
+                raise RuntimeError(
+                    f"OKX_INSTRUMENT_UNAVAILABLE:{inst}:demo={first_error}:"
+                    f"public={type(e).__name__}:{str(e)[:300]}"
+                ) from e
+        if not data:
+            raise RuntimeError(f"OKX_INSTRUMENT_UNAVAILABLE:{inst}:demo={first_error}:public=EMPTY")
         x = data[0]
         if x.get("state") != "live":
             raise RuntimeError(f"OKX_INSTRUMENT_NOT_LIVE:{inst}:{x.get('state')}")
@@ -156,13 +191,38 @@ class OKXDemoAdapter:
 
     def ticker_row(self, asset):
         inst = self.inst_id(asset)
-        data = self.public_get("/api/v5/market/ticker", {"instId":inst}).get("data", [])
-        if not data:
-            raise RuntimeError(f"OKX_TICKER_EMPTY:{inst}")
-        return data[0]
+        demo_error = None
+        try:
+            data = self.public_get("/api/v5/market/ticker", {"instId":inst}).get("data", [])
+            if data:
+                row = dict(data[0])
+                row["_astra_market_source"] = "OKX_DEMO_PUBLIC"
+                return row
+            demo_error = f"OKX_TICKER_EMPTY:{inst}"
+        except Exception as e:
+            demo_error = f"{type(e).__name__}:{str(e)[:300]}"
+
+        # Read-only market data fallback only. Trading/account calls remain
+        # authenticated demo requests and are never routed through this path.
+        try:
+            data = self.market_get("/api/v5/market/ticker", {"instId":inst}).get("data", [])
+            if data:
+                row = dict(data[0])
+                row["_astra_market_source"] = "OKX_PUBLIC_FALLBACK"
+                return row
+        except Exception as e:
+            raise RuntimeError(
+                f"OKX_TICKER_UNAVAILABLE:{inst}:demo={demo_error}:"
+                f"public={type(e).__name__}:{str(e)[:300]}"
+            ) from e
+        raise RuntimeError(f"OKX_TICKER_UNAVAILABLE:{inst}:demo={demo_error}:public=EMPTY")
+
+    def ticker_with_source(self, asset):
+        row = self.ticker_row(asset)
+        return float(row["last"]), row.get("_astra_market_source") or "OKX_MARKET_UNKNOWN"
 
     def ticker(self, asset):
-        return float(self.ticker_row(asset)["last"])
+        return self.ticker_with_source(asset)[0]
 
     def fee_rates(self, asset):
         """Return current account fee rates for this SWAP in percentage units.
