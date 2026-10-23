@@ -166,6 +166,16 @@ OKX_ACCOUNT_INSTRUMENT_CACHE_SECONDS = int(os.getenv("OKX_ACCOUNT_INSTRUMENT_CAC
 OBSERVABILITY_ENABLED = os.getenv("OBSERVABILITY_ENABLED", "true").lower() == "true"
 SHADOW_JOURNAL_ENABLED = os.getenv("SHADOW_JOURNAL_ENABLED", "true").lower() == "true"
 SHADOW_MIN_QUALITY = float(os.getenv("SHADOW_MIN_QUALITY", "50"))
+
+# MTF shadow replay is diagnostics-only. It records how blocked MTF candidates
+# moved later using already-collected decision snapshots; it never creates or
+# routes a trade and cannot alter any gate/risk threshold.
+MTF_SHADOW_REPLAY_ENABLED = os.getenv("MTF_SHADOW_REPLAY_ENABLED", "true").lower() == "true"
+MTF_SHADOW_REPLAY_HORIZONS_MINUTES = tuple(
+    int(x.strip()) for x in os.getenv("MTF_SHADOW_REPLAY_HORIZONS_MINUTES", "60,240").split(",")
+    if x.strip()
+)
+MTF_SHADOW_REPLAY_EVAL_BATCH = int(os.getenv("MTF_SHADOW_REPLAY_EVAL_BATCH", "200"))
 OBSERVABILITY_LOG_MAX_MB = float(os.getenv("OBSERVABILITY_LOG_MAX_MB", "20"))
 ANALYTICS_RECENT_LIMIT = int(os.getenv("ANALYTICS_RECENT_LIMIT", "20"))
 
