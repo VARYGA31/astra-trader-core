@@ -4,6 +4,7 @@ import unittest
 import config
 import market_snapshot
 import trade_universe
+import defi_universe
 
 
 class DemoMarketAlignmentTests(unittest.TestCase):
@@ -22,6 +23,23 @@ class DemoMarketAlignmentTests(unittest.TestCase):
         config.EXECUTION_MODE="okx_demo"
         h=market_snapshot._request_headers(market_snapshot.BINANCE+"/api/v3/ticker/24hr")
         self.assertNotIn("x-simulated-trading",h)
+
+    def test_defi_universe_uses_simulated_header_in_demo(self):
+        config.EXECUTION_MODE="okx_demo"
+        original=defi_universe.requests.get
+        seen={}
+        class Response:
+            def raise_for_status(self): pass
+            def json(self): return {"code":"0","data":[]}
+        try:
+            def fake_get(url,params=None,headers=None,timeout=None):
+                seen["headers"]=headers or {}
+                return Response()
+            defi_universe.requests.get=fake_get
+            defi_universe._get("/api/v5/market/tickers",{"instType":"SWAP"})
+            self.assertEqual(seen["headers"].get("x-simulated-trading"),"1")
+        finally:
+            defi_universe.requests.get=original
 
     def test_demo_snapshot_uses_okx_swap_reference_not_binance(self):
         config.EXECUTION_MODE="okx_demo"
