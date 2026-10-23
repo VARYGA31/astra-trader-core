@@ -8,15 +8,21 @@ from asset_map import ASSETS
 import gold_macro
 
 BINANCE = "https://data-api.binance.vision"
-OKX = "https://www.okx.com"
+OKX = config.OKX_BASE_URL
 TIMEOUT = 12
 UA = {"User-Agent": "ASTRA-Trader-Market/2.0"}
 
 def now():
     return datetime.now(timezone.utc).isoformat()
 
+def _request_headers(url):
+    headers=dict(UA)
+    if str(config.EXECUTION_MODE).lower()=="okx_demo" and str(url).startswith(OKX):
+        headers["x-simulated-trading"]="1"
+    return headers
+
 def get(url, params=None):
-    r = requests.get(url, params=params, headers=UA, timeout=TIMEOUT)
+    r = requests.get(url, params=params, headers=_request_headers(url), timeout=TIMEOUT)
     r.raise_for_status()
     return r.json(), r.status_code
 
@@ -401,16 +407,25 @@ def snapshot(asset, include_micro=False):
     errors=[]
     spot=None
 
-    if asset=="XAU":
+    if str(config.EXECUTION_MODE).lower()=="okx_demo":
+        # OKX explicitly separates demo market data from production market data.
+        # In demo mode every price-sensitive feature must therefore use the same
+        # simulated swap environment as order execution; mixing Binance/live OKX
+        # with demo execution creates artificial drift and invalid R:R levels.
+        source="okx_demo_swap_reference"
+        try:
+            spot=okx_reference_market(cfg["okx_swap"])
+        except Exception as e:
+            errors.append("okx_demo_reference:"+str(e))
+    elif asset=="XAU":
         source="okx_xau_swap_reference"
         try:
             spot=okx_reference_market(cfg["okx_swap"])
         except Exception as e:
             errors.append("okx_xau_reference:"+str(e))
     elif not cfg.get("binance_spot"):
-        # Lab-only markets deliberately use the tradable OKX swap itself as
-        # the technical/order-flow reference. This avoids adding another data
-        # dependency merely for shadow training.
+        # Assets without a Binance spot market use the tradable OKX swap itself
+        # as the technical/order-flow reference.
         source="okx_swap_reference"
         try:
             spot=okx_reference_market(cfg["okx_swap"])
