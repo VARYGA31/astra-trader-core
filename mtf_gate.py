@@ -112,6 +112,59 @@ def _trigger(tf15, direction):
     confirmed=count>=config.MTF_TRIGGER_MIN_COMPONENTS and components.get("volume_not_dead",True)
     return {"confirmed":confirmed,"components":components,"count":count}
 
+def _normal_blockers(regime_ok, setup_ok, trigger, quality, min_quality):
+    """Explain a failed NORMAL MTF candidate without changing any threshold."""
+    blockers=[]
+    if not regime_ok:
+        blockers.append("4H_REGIME_NOT_ALIGNED")
+    if not setup_ok:
+        blockers.append("1H_SETUP_NOT_CONFIRMED")
+    if not bool((trigger or {}).get("confirmed")):
+        components=(trigger or {}).get("components") or {}
+        if components and components.get("volume_not_dead") is False:
+            blockers.append("15M_VOLUME_VETO")
+        if int((trigger or {}).get("count") or 0) < int(config.MTF_TRIGGER_MIN_COMPONENTS):
+            blockers.append("15M_TRIGGER_COMPONENTS_LOW")
+        elif not blockers or blockers[-1]!="15M_VOLUME_VETO":
+            blockers.append("15M_TRIGGER_NOT_CONFIRMED")
+    try:
+        if float(quality) < float(min_quality):
+            blockers.append("MTF_QUALITY_BELOW_MIN")
+    except Exception:
+        blockers.append("MTF_QUALITY_UNAVAILABLE")
+    return blockers
+
+def _transition_blockers(
+    transition_enabled,
+    regime_ok,
+    transition_4h_ok,
+    setup_ok,
+    trigger,
+    transition_trigger_ok,
+    quality,
+):
+    """Explain why the conservative transition path did not qualify."""
+    if not transition_enabled:
+        return ["TRANSITION_DISABLED"]
+    blockers=[]
+    if regime_ok:
+        blockers.append("TRANSITION_NOT_APPLICABLE_NORMAL_4H")
+    if not transition_4h_ok:
+        blockers.append("TRANSITION_4H_NOT_READY")
+    if not setup_ok:
+        blockers.append("1H_SETUP_NOT_CONFIRMED")
+    if not transition_trigger_ok:
+        components=(trigger or {}).get("components") or {}
+        if components and components.get("volume_not_dead") is False:
+            blockers.append("15M_VOLUME_VETO")
+        blockers.append("TRANSITION_15M_TRIGGER_WEAK")
+    try:
+        if float(quality) < float(config.MTF_TRANSITION_MIN_QUALITY):
+            blockers.append("TRANSITION_QUALITY_BELOW_MIN")
+    except Exception:
+        blockers.append("TRANSITION_QUALITY_UNAVAILABLE")
+    return blockers
+
 def _quality(frames, direction):
     tf4=frames.get("4h",{}); tf1=frames.get("1h",{}); tf15=frames.get("15m",{})
     s4,_=_tf_score(tf4,direction)
@@ -169,6 +222,16 @@ def evaluate(package):
         )
 
         mode="NORMAL" if normal_pass else "TRANSITION" if transition_pass else None
+        normal_blockers=_normal_blockers(regime_ok,setup_ok,trigger,quality,min_quality)
+        transition_blockers=_transition_blockers(
+            transition_enabled,
+            regime_ok,
+            transition_4h_ok,
+            setup_ok,
+            trigger,
+            transition_trigger_ok,
+            quality,
+        )
         candidates.append({
             "direction":direction,
             "passed":bool(normal_pass or transition_pass),
@@ -181,6 +244,10 @@ def evaluate(package):
             "setup_1h_ok":setup_ok,
             "trigger_15m":trigger,
             "transition_trigger_ok":transition_trigger_ok,
+            "normal_blockers":[] if normal_pass else normal_blockers,
+            "transition_blockers":[] if transition_pass else transition_blockers,
+            "failed_checks":[] if (normal_pass or transition_pass) else normal_blockers,
+            "primary_blocker":None if (normal_pass or transition_pass) or not normal_blockers else normal_blockers[0],
         })
 
     passed=[x for x in candidates if x["passed"]]
@@ -205,6 +272,10 @@ def evaluate(package):
             else "MTF_ALIGNED_TRANSITION" if chosen and chosen.get("mode")=="TRANSITION"
             else "MTF_NOT_ALIGNED"
         ),
+        "best_candidate_direction":best.get("direction") if best else None,
+        "blockers":[] if chosen else (best.get("normal_blockers") or [] if best else []),
+        "transition_blockers":[] if chosen else (best.get("transition_blockers") or [] if best else []),
+        "primary_blocker":None if chosen else (best.get("primary_blocker") if best else None),
         "trigger_candle_id":tf15.get("last_confirmed_close_time_ms"),
         "frames_summary":{
             k:{

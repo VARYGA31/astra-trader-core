@@ -38,6 +38,9 @@ def test_payload_contains_safe_research_layers():
     assert "status" in x["model_budget"],x
     assert "shadow_agent_council" in x,x
     assert "market_scanner" in x,x
+    assert "decision_funnel_24h" in x["diagnostics"],x
+    assert "mtf_blockers_24h" in x["diagnostics"],x
+    assert "mtf_shadow_replay" in x["diagnostics"],x
 
 if __name__=="__main__":
     test_mission_control_is_read_only()

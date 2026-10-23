@@ -22,6 +22,7 @@ DIR = Path(config.STATE_DIR)
 STATE = DIR / "observability_state.json"
 DECISIONS = DIR / "decision_events.jsonl"
 SHADOW = DIR / "shadow_setups.jsonl"
+SHADOW_OUTCOMES = DIR / "mtf_shadow_outcomes.jsonl"
 NEWS = DIR / "news_events.jsonl"
 TRADE_JOURNAL = DIR / "trade_journal.jsonl"
 
@@ -142,6 +143,11 @@ def _compact_candidates(mtf):
             "direction":c.get("direction"),"passed":bool(c.get("passed")),"mode":c.get("mode"),"quality":c.get("quality"),
             "regime_4h_ok":c.get("regime_4h_ok"),"setup_1h_ok":c.get("setup_1h_ok"),
             "trigger_15m_confirmed":trig15.get("confirmed"),"trigger_15m_count":trig15.get("count"),
+            "trigger_15m_components":trig15.get("components") or {},
+            "normal_blockers":c.get("normal_blockers") or [],
+            "transition_blockers":c.get("transition_blockers") or [],
+            "failed_checks":c.get("failed_checks") or [],
+            "primary_blocker":c.get("primary_blocker"),
             "regime_1h_ok":c.get("regime_1h_ok"),"setup_15m_ok":c.get("setup_15m_ok"),
             "trigger_5m_confirmed":trig5.get("confirmed"),"trigger_5m_count":trig5.get("count"),
             "micro_context_5m_ok":c.get("context_5m_ok"),"micro_setup_3m_ok":c.get("setup_3m_ok"),
@@ -205,6 +211,7 @@ def record_decision(package, gate, decision, execution, model_called=False):
 
     try:
         asset = str((package or {}).get("asset") or (decision or {}).get("asset") or "").upper()
+        _evaluate_mtf_shadow_outcomes(package, asset)
         gate = gate or {}
         decision = decision or {}
         execution = execution or {}
@@ -227,6 +234,9 @@ def record_decision(package, gate, decision, execution, model_called=False):
             "mtf_mode": gate.get("mtf_mode", mtf.get("mode")),
             "mtf_minimum_quality": mtf.get("minimum_quality"),
             "mtf_passed": mtf.get("passed"),
+            "mtf_blockers":mtf.get("blockers") or [],
+            "mtf_transition_blockers":mtf.get("transition_blockers") or [],
+            "mtf_primary_blocker":mtf.get("primary_blocker"),
             "best_candidate": best,
             "market": _compact_market(package),
             "model_decision": {
@@ -361,12 +371,22 @@ def record_decision(package, gate, decision, execution, model_called=False):
             if blocked and q >= float(config.SHADOW_MIN_QUALITY):
                 shadow = {
                     "timestamp_utc": row["timestamp_utc"],
+                    "setup_id":_shadow_setup_id({
+                        "timestamp_utc":row["timestamp_utc"],
+                        "asset":asset,
+                        "direction":best.get("direction"),
+                        "trigger_candle_id":mtf.get("trigger_candle_id"),
+                    }),
                     "asset": asset,
                     "strategy_mode":row.get("strategy_mode"),
                     "price": row["market"].get("price"),
                     "direction": best.get("direction"),
                     "quality": best.get("quality"),
                     "mtf_mode": row.get("mtf_mode") or best.get("mode"),
+                    "trigger_candle_id":mtf.get("trigger_candle_id"),
+                    "mtf_blockers":mtf.get("blockers") or best.get("normal_blockers") or [],
+                    "mtf_transition_blockers":mtf.get("transition_blockers") or best.get("transition_blockers") or [],
+                    "mtf_primary_blocker":mtf.get("primary_blocker") or best.get("primary_blocker"),
                     "minimum_quality": row.get("mtf_minimum_quality"),
                     "regime_4h_ok": best.get("regime_4h_ok"),
                     "setup_1h_ok": best.get("setup_1h_ok"),
@@ -414,6 +434,148 @@ def _load_jsonl(path):
     except Exception:
         pass
     return out
+
+def _shadow_setup_id(row):
+    ts=str((row or {}).get("timestamp_utc") or "")
+    asset=str((row or {}).get("asset") or "").upper()
+    direction=str((row or {}).get("direction") or "").upper()
+    candle=str((row or {}).get("trigger_candle_id") or "")
+    return "|".join((ts,asset,direction,candle))
+
+def _market_reference_price(package):
+    market=(package or {}).get("decision_context",{}).get("market",{})
+    for value in (
+        (market.get("perp_okx") or {}).get("last_price"),
+        (market.get("spot") or {}).get("price"),
+    ):
+        try:
+            value=float(value)
+            if value>0:
+                return value
+        except Exception:
+            continue
+    return None
+
+def _evaluate_mtf_shadow_outcomes(package, asset):
+    """Evaluate blocked MTF setups using later snapshots only; never trades."""
+    if not getattr(config,"MTF_SHADOW_REPLAY_ENABLED",True):
+        return {"status":"DISABLED","evaluated":0}
+    try:
+        current_price=_market_reference_price(package)
+        if not current_price or not asset:
+            return {"status":"NO_PRICE","evaluated":0}
+        market=(package or {}).get("decision_context",{}).get("market",{})
+        current_ts=_parse_ts(market.get("generated_at_utc")) or datetime.now(timezone.utc)
+        setups=_load_jsonl(SHADOW)
+        outcomes=_load_jsonl(SHADOW_OUTCOMES)
+        done={
+            (str(x.get("setup_id") or ""),int(x.get("horizon_minutes") or 0))
+            for x in outcomes
+        }
+        horizons=tuple(sorted(set(
+            int(x) for x in getattr(config,"MTF_SHADOW_REPLAY_HORIZONS_MINUTES",(60,240))
+            if int(x)>0
+        )))
+        batch=max(1,int(getattr(config,"MTF_SHADOW_REPLAY_EVAL_BATCH",200)))
+        evaluated=0
+        for setup in reversed(setups):
+            if evaluated>=batch:
+                break
+            if str(setup.get("asset") or "").upper()!=str(asset).upper():
+                continue
+            if str(setup.get("blocked_reason") or "")!="MTF_NOT_ALIGNED":
+                continue
+            setup_ts=_parse_ts(setup.get("timestamp_utc"))
+            if not setup_ts:
+                continue
+            try:
+                entry=float(setup.get("price"))
+            except Exception:
+                continue
+            if entry<=0:
+                continue
+            direction=str(setup.get("direction") or "").upper()
+            if direction not in {"LONG","SHORT"}:
+                continue
+            setup_id=str(setup.get("setup_id") or _shadow_setup_id(setup))
+            age_minutes=(current_ts-setup_ts).total_seconds()/60.0
+            for horizon in horizons:
+                key=(setup_id,int(horizon))
+                if key in done or age_minutes<float(horizon):
+                    continue
+                raw_return_pct=(float(current_price)-entry)/entry*100.0
+                signed_return_pct=raw_return_pct if direction=="LONG" else -raw_return_pct
+                outcome={
+                    "evaluated_at_utc":current_ts.isoformat(),
+                    "setup_timestamp_utc":setup.get("timestamp_utc"),
+                    "setup_id":setup_id,
+                    "asset":asset,
+                    "direction":direction,
+                    "entry_price":entry,
+                    "evaluation_price":float(current_price),
+                    "horizon_minutes":int(horizon),
+                    "evaluation_age_minutes":round(age_minutes,2),
+                    "evaluation_delay_minutes":round(max(0.0,age_minutes-float(horizon)),2),
+                    "raw_return_pct":round(raw_return_pct,6),
+                    "signed_return_pct":round(signed_return_pct,6),
+                    "positive":bool(signed_return_pct>0),
+                    "quality":setup.get("quality"),
+                    "mtf_primary_blocker":setup.get("mtf_primary_blocker"),
+                    "mtf_blockers":setup.get("mtf_blockers") or [],
+                    "mtf_transition_blockers":setup.get("mtf_transition_blockers") or [],
+                }
+                _append_jsonl(SHADOW_OUTCOMES,outcome)
+                done.add(key)
+                evaluated+=1
+                if evaluated>=batch:
+                    break
+        return {"status":"OK","evaluated":evaluated}
+    except Exception as e:
+        return {"status":"ERROR","evaluated":0,"error":str(e)[:300]}
+
+def _shadow_metrics(rows):
+    vals=[]
+    for x in rows:
+        try:
+            vals.append(float(x.get("signed_return_pct")))
+        except Exception:
+            continue
+    positives=[v for v in vals if v>0]
+    return {
+        "samples":len(vals),
+        "positive":len(positives),
+        "hit_rate_pct":round(len(positives)/len(vals)*100.0,2) if vals else 0.0,
+        "avg_signed_return_pct":round(statistics.mean(vals),6) if vals else None,
+        "median_signed_return_pct":round(statistics.median(vals),6) if vals else None,
+    }
+
+def shadow_replay_summary(hours=168):
+    rows=_load_jsonl(SHADOW_OUTCOMES)
+    try:
+        cutoff=datetime.now(timezone.utc)-timedelta(hours=float(hours))
+        rows=[
+            x for x in rows
+            if (_parse_ts(x.get("setup_timestamp_utc")) and _parse_ts(x.get("setup_timestamp_utc"))>=cutoff)
+        ]
+    except Exception:
+        pass
+    by_horizon=defaultdict(list)
+    by_blocker=defaultdict(list)
+    for x in rows:
+        by_horizon[str(int(x.get("horizon_minutes") or 0))].append(x)
+        blocker=str(x.get("mtf_primary_blocker") or "UNCLASSIFIED")
+        by_blocker[blocker].append(x)
+    return {
+        "status":"OK" if getattr(config,"MTF_SHADOW_REPLAY_ENABLED",True) else "DISABLED",
+        "window_hours":hours,
+        "evaluated":len(rows),
+        "by_horizon":{k:_shadow_metrics(v) for k,v in sorted(by_horizon.items(),key=lambda kv:int(kv[0]))},
+        "by_primary_blocker":{
+            k:_shadow_metrics(v)
+            for k,v in sorted(by_blocker.items(),key=lambda kv:(-len(kv[1]),kv[0]))
+        },
+        "recent":rows[-10:],
+    }
 
 def _dedupe_closes(events):
     out=[]
@@ -517,9 +679,11 @@ def _decision_funnel(since_utc=None):
 
     skips=defaultdict(int)
     rejects=defaultdict(int)
+    mtf_blockers=defaultdict(int)
     by_asset=defaultdict(lambda:{
         "decisions":0,"model_calls":0,"model_skips":0,"model_waits":0,"opened":0,
         "skip_reasons":defaultdict(int),
+        "mtf_blockers":defaultdict(int),
         "wait_categories":defaultdict(int),
         "trade_rejection_reasons":defaultdict(int),
         "last_rejection":None,
@@ -551,6 +715,11 @@ def _decision_funnel(since_utc=None):
             skip_reason=str(x.get("gate_reason") or "UNKNOWN_SKIP")
             skips[skip_reason]+=1
             a["skip_reasons"][skip_reason]+=1
+            if skip_reason=="MTF_NOT_ALIGNED":
+                for blocker in (x.get("mtf_blockers") or []):
+                    blocker=str(blocker)
+                    mtf_blockers[blocker]+=1
+                    a["mtf_blockers"][blocker]+=1
 
         ex=x.get("execution") or {}
         status=ex.get("status")
@@ -587,8 +756,9 @@ def _decision_funnel(since_utc=None):
     asset_out={}
     for asset,a in by_asset.items():
         asset_out[asset]={
-            **{k:v for k,v in a.items() if k not in {"skip_reasons","wait_categories","trade_rejection_reasons"}},
+            **{k:v for k,v in a.items() if k not in {"skip_reasons","mtf_blockers","wait_categories","trade_rejection_reasons"}},
             "skip_reasons":dict(sorted(a["skip_reasons"].items(),key=lambda kv:(-kv[1],kv[0]))),
+            "mtf_blockers":dict(sorted(a["mtf_blockers"].items(),key=lambda kv:(-kv[1],kv[0]))),
             "wait_categories":dict(sorted(a["wait_categories"].items(),key=lambda kv:(-kv[1],kv[0]))),
             "trade_rejection_reasons":dict(sorted(a["trade_rejection_reasons"].items(),key=lambda kv:(-kv[1],kv[0]))),
         }
@@ -603,6 +773,7 @@ def _decision_funnel(since_utc=None):
         "model_wait_hardness":dict(sorted(wait_hardness.items(),key=lambda kv:(-kv[1],kv[0]))),
         "opened_trades":opened,
         "skip_reasons":dict(sorted(skips.items(),key=lambda kv:(-kv[1],kv[0]))),
+        "mtf_blockers":dict(sorted(mtf_blockers.items(),key=lambda kv:(-kv[1],kv[0]))),
         "trade_rejection_reasons":dict(sorted(rejects.items(),key=lambda kv:(-kv[1],kv[0]))),
         "by_asset":asset_out,
         "by_strategy_mode":dict(by_mode),
@@ -648,6 +819,7 @@ def diagnostic_digest(hours=24,recent_closed_limit=5):
         "since_utc":since,
         "decision_funnel":_decision_funnel(since),
         "trade_performance":trade_performance(since),
+        "mtf_shadow_replay":shadow_replay_summary(float(hours)),
         "recent_closed":recent_closed(recent_closed_limit),
     }
 
@@ -692,6 +864,7 @@ def analytics_report(days=None):
         "trades_since_install":trade_performance(since),
         "trades_all_journal_history":trade_performance(None),
         "recent_shadow_setups":recent_shadow(),
+        "mtf_shadow_replay":shadow_replay_summary(168),
         "adaptive_brain":adaptive_memory.load_brain(),
         "adaptive_learning_7d":adaptive_memory.summary(168),
     }
