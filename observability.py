@@ -371,6 +371,7 @@ def record_decision(package, gate, decision, execution, model_called=False):
             if blocked and q >= float(config.SHADOW_MIN_QUALITY):
                 shadow = {
                     "timestamp_utc": row["timestamp_utc"],
+                    "mtf_replay_version":1,
                     "setup_id":_shadow_setup_id({
                         "timestamp_utc":row["timestamp_utc"],
                         "asset":asset,
@@ -485,6 +486,8 @@ def _evaluate_mtf_shadow_outcomes(package, asset):
                 continue
             if str(setup.get("blocked_reason") or "")!="MTF_NOT_ALIGNED":
                 continue
+            if int(setup.get("mtf_replay_version") or 0)!=1:
+                continue
             setup_ts=_parse_ts(setup.get("timestamp_utc"))
             if not setup_ts:
                 continue
@@ -499,13 +502,17 @@ def _evaluate_mtf_shadow_outcomes(package, asset):
                 continue
             setup_id=str(setup.get("setup_id") or _shadow_setup_id(setup))
             age_minutes=(current_ts-setup_ts).total_seconds()/60.0
+            max_delay=max(0,int(getattr(config,"MTF_SHADOW_REPLAY_MAX_DELAY_MINUTES",90)))
             for horizon in horizons:
                 key=(setup_id,int(horizon))
                 if key in done or age_minutes<float(horizon):
                     continue
+                if age_minutes>float(horizon)+float(max_delay):
+                    continue
                 raw_return_pct=(float(current_price)-entry)/entry*100.0
                 signed_return_pct=raw_return_pct if direction=="LONG" else -raw_return_pct
                 outcome={
+                    "mtf_replay_version":1,
                     "evaluated_at_utc":current_ts.isoformat(),
                     "setup_timestamp_utc":setup.get("timestamp_utc"),
                     "setup_id":setup_id,
@@ -550,7 +557,10 @@ def _shadow_metrics(rows):
     }
 
 def shadow_replay_summary(hours=168):
-    rows=_load_jsonl(SHADOW_OUTCOMES)
+    rows=[
+        x for x in _load_jsonl(SHADOW_OUTCOMES)
+        if int(x.get("mtf_replay_version") or 0)==1
+    ]
     try:
         cutoff=datetime.now(timezone.utc)-timedelta(hours=float(hours))
         rows=[
