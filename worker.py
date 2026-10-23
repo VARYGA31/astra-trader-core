@@ -100,6 +100,8 @@ def _heartbeat(mode):
                 "model_waits":funnel24.get("model_waits",0),
                 "opened_trades":funnel24.get("opened_trades",0),
                 "skip_reasons":funnel24.get("skip_reasons") or {},
+                "mtf_blockers":funnel24.get("mtf_blockers") or {},
+                "mtf_shadow_replay":diag24.get("mtf_shadow_replay") or {},
                 "trade_rejection_reasons":funnel24.get("trade_rejection_reasons") or {},
                 "by_asset":funnel24.get("by_asset") or {},
                 "trades_by_asset":(perf24.get("by_asset") or {}),
