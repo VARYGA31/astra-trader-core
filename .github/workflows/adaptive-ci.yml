@@ -74,5 +74,7 @@ jobs:
           python test_treasury_parser.py
       - name: Observability regression
         run: python test_observability.py
+      - name: MTF explainability + shadow replay regression
+        run: python test_mtf_explainability.py
       - name: Transition regression
         run: python test_transition_mode.py
