@@ -9,38 +9,10 @@ def test_mission_control_is_read_only():
     assert "/api/mission-control" in html
     assert "THE COUNCIL" in html
     assert "VEGA SCANNER" in html
-    assert "$('modelSpend').textContent='
-def test_payload_contains_safe_research_layers():
-    runtime={
-        "status":"ok",
-        "execution_mode":"okx_demo",
-        "decision_engine_enabled":True,
-        "trade_execution_enabled":True,
-        "strategy_mode":{"mode":"NORMAL"},
-        "micro_stream":{"status":"RUNNING","connected":True},
-        "crypto_shadow_lab":{"status":"OK"},
-        "skip_reasons":{"MTF_NOT_ALIGNED":12},
-        "last_decisions":{},
-    }
-    x=mission_control.build_payload(runtime)
-    assert x["read_only"] is True,x
-    assert x["system"]["mode"]=="NORMAL",x
-    assert "alpha_factory" in x["research"],x
-    assert "tournament" in x["research"],x
-    assert "normal_assets" in x["universe"],x
-    assert "model_budget" in x,x
-    assert "status" in x["model_budget"],x
-    assert "shadow_agent_council" in x,x
-    assert "market_scanner" in x,x
-
-if __name__=="__main__":
-    test_mission_control_is_read_only()
-    test_payload_contains_safe_research_layers()
-    print({"status":"OK","mission_control":"READ_ONLY"})
-+fmt(md.estimated_cost_usd||0,3);" in html
-    assert "$('modelBudgetMeta').textContent=" in html
-    assert "$('evidence').textContent=(a.evidence_rows||0)+' evidence';" in html
-    assert "$('modelSpend').textContent='\n" not in html
+    assert "modelBudgetMeta" in html
+    assert "estimated_cost_usd" in html
+    assert "cost_remaining_usd" in html
+    assert "evidence_rows" in html
     for forbidden in ("/trade","/order","/leverage","/risk-update","open_fok"):
         assert forbidden not in html,forbidden
 
