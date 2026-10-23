@@ -24,7 +24,10 @@ def _num(x):
     except Exception: return None
 
 def _get(path,params=None):
-    r=requests.get(OKX+path,params=params,headers=UA,timeout=15)
+    headers=dict(UA)
+    if str(config.EXECUTION_MODE).lower()=="okx_demo":
+        headers["x-simulated-trading"]="1"
+    r=requests.get(OKX+path,params=params,headers=headers,timeout=15)
     r.raise_for_status()
     d=r.json()
     if str(d.get("code","0"))!="0":
