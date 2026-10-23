@@ -62,6 +62,7 @@ def test_shadow_replay_scores_blocked_direction_without_trading():
     old_enabled=config.MTF_SHADOW_REPLAY_ENABLED
     old_horizons=config.MTF_SHADOW_REPLAY_HORIZONS_MINUTES
     old_batch=config.MTF_SHADOW_REPLAY_EVAL_BATCH
+    old_delay=config.MTF_SHADOW_REPLAY_MAX_DELAY_MINUTES
     try:
         with tempfile.TemporaryDirectory() as td:
             observability.SHADOW=Path(td)/"shadow.jsonl"
@@ -69,11 +70,13 @@ def test_shadow_replay_scores_blocked_direction_without_trading():
             config.MTF_SHADOW_REPLAY_ENABLED=True
             config.MTF_SHADOW_REPLAY_HORIZONS_MINUTES=(60,)
             config.MTF_SHADOW_REPLAY_EVAL_BATCH=10
+            config.MTF_SHADOW_REPLAY_MAX_DELAY_MINUTES=90
 
             now=datetime.now(timezone.utc)
             setup={
                 "timestamp_utc":(now-timedelta(minutes=70)).isoformat(),
                 "setup_id":"s1",
+                "mtf_replay_version":1,
                 "asset":"BTC",
                 "price":100.0,
                 "direction":"LONG",
@@ -99,12 +102,26 @@ def test_shadow_replay_scores_blocked_direction_without_trading():
             summary=observability.shadow_replay_summary(168)
             assert summary["by_horizon"]["60"]["samples"]==1,summary
             assert summary["by_primary_blocker"]["15M_VOLUME_VETO"]["avg_signed_return_pct"]==2.0,summary
+
+            legacy={
+                "timestamp_utc":(now-timedelta(minutes=70)).isoformat(),
+                "setup_id":"legacy",
+                "asset":"BTC",
+                "price":100.0,
+                "direction":"LONG",
+                "blocked_reason":"MTF_NOT_ALIGNED",
+            }
+            with observability.SHADOW.open("a",encoding="utf-8") as fh:
+                fh.write(json.dumps(legacy)+"\n")
+            result2=observability._evaluate_mtf_shadow_outcomes(package,"BTC")
+            assert result2["evaluated"]==0,result2
     finally:
         observability.SHADOW=old_shadow
         observability.SHADOW_OUTCOMES=old_outcomes
         config.MTF_SHADOW_REPLAY_ENABLED=old_enabled
         config.MTF_SHADOW_REPLAY_HORIZONS_MINUTES=old_horizons
         config.MTF_SHADOW_REPLAY_EVAL_BATCH=old_batch
+        config.MTF_SHADOW_REPLAY_MAX_DELAY_MINUTES=old_delay
 
 
 if __name__=="__main__":
