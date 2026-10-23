@@ -7,6 +7,7 @@ MICRO remains intentionally limited to BTC/ETH/GRAM.
 """
 import config
 import defi_universe
+from okx_demo_adapter import OKXDemoAdapter
 
 def _dedupe(xs):
     out=[]
@@ -30,11 +31,19 @@ def normal_assets(universe=None):
             asset=str(row.get("asset") or "").upper()
             try: spread=float(row.get("spread_pct"))
             except Exception: continue
-            if (
+            if not (
                 asset in set(config.DEFI_TRADE_WATCHLIST)
                 and spread<=float(config.DEFI_TRADE_MAX_SPREAD_PCT)
             ):
-                eligible.append(row)
+                continue
+            if str(config.EXECUTION_MODE).lower()=="okx_demo":
+                try:
+                    tradability=OKXDemoAdapter().account_tradability(asset)
+                except Exception:
+                    continue
+                if not tradability.get("available"):
+                    continue
+            eligible.append(row)
         eligible.sort(
             key=lambda r:(float(r.get("liquidity_score") or -999),float(r.get("volume_proxy_usd") or 0)),
             reverse=True,
