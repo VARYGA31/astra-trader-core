@@ -33,6 +33,8 @@ def build_payload(runtime):
     trainer=adaptive_trainer.summary(168)
     micro=micro_stats.summary(6)
     journal=trade_journal.summary()
+    diag24=observability.diagnostic_digest(24,5)
+    funnel24=(diag24 or {}).get("decision_funnel") or {}
     mode=((runtime.get("strategy_mode") or {}).get("mode") or "UNKNOWN")
     position_check=runtime.get("last_position_check") or {}
     open_positions=position_check.get("open_positions")
@@ -73,6 +75,9 @@ def build_payload(runtime):
         "market_scanner":market_scanner.summary(),
         "diagnostics":{
             "top_skip_reasons":_top(runtime.get("skip_reasons") or {},10),
+            "decision_funnel_24h":funnel24,
+            "mtf_blockers_24h":_top(funnel24.get("mtf_blockers") or {},10),
+            "mtf_shadow_replay":(diag24 or {}).get("mtf_shadow_replay") or {},
             "last_trade_rejection":runtime.get("last_trade_rejection"),
             "last_approved_trade":runtime.get("last_approved_trade"),
             "last_model_decision":runtime.get("last_model_decision"),
@@ -285,7 +290,8 @@ function render(d){
  const tr=(d.research||{}).trainer||{};$('trainerR').textContent=fmt(tr.avg_net_r??tr.avg_r,3)+'R';$('trainerMeta').textContent=(tr.evaluated||0)+' evaluated · cost '+fmt(tr.avg_cost_r,3)+'R';
  const sh=(d.micro||{}).second_shadow||{};$('shadow2').textContent=(sh.evaluated||0)+' eval';$('shadow2Meta').textContent=(sh.wins||0)+'W/'+(sh.losses||0)+'L · PF '+fmt(sh.profit_factor,2)+' · NET '+money(sh.net_pnl_usd||0);
  const ws=s.micro_stream||{};$('stream').textContent=String(ws.status||'—');$('streamMeta').textContent='OKX WS '+(ws.connected?'connected':'not connected')+' · Shadow Lab '+String((s.shadow_lab||{}).status||'—');
- const diag={model_budget:mb,shadow_agent_council:clast,market_scanner:ranks,last_trade_rejection:(d.diagnostics||{}).last_trade_rejection,last_approved_trade:(d.diagnostics||{}).last_approved_trade,last_model_decision:(d.diagnostics||{}).last_model_decision};
+ const dd=d.diagnostics||{};
+ const diag={model_budget:mb,decision_funnel_24h:dd.decision_funnel_24h,mtf_blockers_24h:dd.mtf_blockers_24h,mtf_shadow_replay:dd.mtf_shadow_replay,shadow_agent_council:clast,market_scanner:ranks,last_trade_rejection:dd.last_trade_rejection,last_approved_trade:dd.last_approved_trade,last_model_decision:dd.last_model_decision};
  $('diag').textContent=JSON.stringify(diag,null,2);
  drawConstellation(genomes);
 }
