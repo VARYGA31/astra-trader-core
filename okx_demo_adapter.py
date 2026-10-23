@@ -117,9 +117,28 @@ class OKXDemoAdapter:
 
     def instrument(self, asset):
         inst = self.inst_id(asset)
-        data = self.public_get("/api/v5/public/instruments", {"instType":"SWAP","instId":inst}).get("data", [])
+        data = []
+        first_error = None
+        try:
+            data = self.public_get(
+                "/api/v5/public/instruments",
+                {"instType":"SWAP","instId":inst},
+            ).get("data", [])
+        except Exception as e:
+            first_error = f"{type(e).__name__}:{str(e)[:300]}"
         if not data:
-            raise RuntimeError(f"OKX_INSTRUMENT_UNAVAILABLE:{inst}")
+            try:
+                data = self.market_get(
+                    "/api/v5/public/instruments",
+                    {"instType":"SWAP","instId":inst},
+                ).get("data", [])
+            except Exception as e:
+                raise RuntimeError(
+                    f"OKX_INSTRUMENT_UNAVAILABLE:{inst}:demo={first_error}:"
+                    f"public={type(e).__name__}:{str(e)[:300]}"
+                ) from e
+        if not data:
+            raise RuntimeError(f"OKX_INSTRUMENT_UNAVAILABLE:{inst}:demo={first_error}:public=EMPTY")
         x = data[0]
         if x.get("state") != "live":
             raise RuntimeError(f"OKX_INSTRUMENT_NOT_LIVE:{inst}:{x.get('state')}")
