@@ -239,6 +239,11 @@ def evaluate_due(batch=None):
     for c in reversed(candidates):
         dt=_parse_ts(c.get("observed_at_utc"))
         if not dt: continue
+        # OKX 1m replay request is intentionally capped at 300 completed bars.
+        # Ignore evidence older than that instead of refetching it every worker tick.
+        age_minutes=(utc-dt).total_seconds()/60.0
+        if age_minutes>295.0:
+            continue
         for h in horizons:
             key=(c.get("candidate_id"),h)
             if key in done: continue

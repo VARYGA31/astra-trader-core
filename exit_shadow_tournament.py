@@ -276,6 +276,11 @@ def evaluate_due(batch=None):
         if oid in done: continue
         dt=_parse_ts(e.get("opened_at_utc"))
         if not dt: continue
+        # 1m replay is capped at 300 bars; stale historical opens cannot be
+        # reconstructed honestly, so never hammer OKX trying to replay them.
+        age_minutes=(utc-dt).total_seconds()/60.0
+        if age_minutes>295.0:
+            continue
         if utc>=dt+timedelta(minutes=horizon):
             pending.append(e)
             if len(pending)>=int(batch or config.EXIT_SHADOW_MAX_PENDING): break
