@@ -75,6 +75,48 @@ def test_quota_error_opens_global_circuit():
         config.MODEL_QUOTA_RETRY_SECONDS=old_retry
         _restore(td,old)
 
+def test_key_rotation_marker_clears_only_auth_circuit():
+    td,old=_sandbox()
+    old_notify=model_budget._notify_once
+    old_marker=config.MODEL_KEY_ROTATION_MARKER
+    try:
+        model_budget._notify_once=lambda *a,**k:None
+        p=model_budget.before_call("TRADE_DECISION",asset="BTC")
+        assert p["allowed"],p
+        info=model_budget.record_error(
+            Exception("401 invalid api key"),
+            p["reservation_id"],"TRADE_DECISION",asset="BTC",model="gpt-6.1-sol"
+        )
+        assert info["kind"]=="AUTH_ERROR",info
+        assert model_budget.summary()["circuit"]["active"] is True
+
+        config.MODEL_KEY_ROTATION_MARKER="rotation-v2"
+        applied=model_budget.apply_key_rotation_marker()
+        assert applied["changed"] is True,applied
+        assert applied["cleared_auth_circuit"] is True,applied
+        assert model_budget.summary()["circuit"]["active"] is False
+
+        # Same marker is idempotent.
+        again=model_budget.apply_key_rotation_marker()
+        assert again["changed"] is False,again
+
+        # A later marker must never clear quota exhaustion.
+        p=model_budget.before_call("TRADE_DECISION",asset="ETH")
+        assert p["allowed"],p
+        q=model_budget.record_error(
+            Exception("429 insufficient_quota credit_balance_exhausted"),
+            p["reservation_id"],"TRADE_DECISION",asset="ETH",model="gpt-6.1-sol"
+        )
+        assert q["kind"]=="CREDIT_EXHAUSTED",q
+        config.MODEL_KEY_ROTATION_MARKER="rotation-v3"
+        applied2=model_budget.apply_key_rotation_marker()
+        assert applied2["cleared_auth_circuit"] is False,applied2
+        assert model_budget.summary()["circuit"]["kind"]=="CREDIT_EXHAUSTED"
+    finally:
+        model_budget._notify_once=old_notify
+        config.MODEL_KEY_ROTATION_MARKER=old_marker
+        _restore(td,old)
+
 def test_trade_client_is_cost_bounded():
     src=inspect.getsource(astra_client.decide)
     assert "model_budget.before_call" in src,src
@@ -85,5 +127,6 @@ def test_trade_client_is_cost_bounded():
 if __name__=="__main__":
     test_normal_budget_protects_emergency_reserve()
     test_quota_error_opens_global_circuit()
+    test_key_rotation_marker_clears_only_auth_circuit()
     test_trade_client_is_cost_bounded()
-    print({"status":"OK","model_budget":"UNIFIED","circuit":"FAIL_CLOSED"})
+    print({"status":"OK","model_budget":"UNIFIED","circuit":"FAIL_CLOSED","key_rotation":"AUTH_ONLY"})

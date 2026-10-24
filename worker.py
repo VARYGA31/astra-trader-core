@@ -254,6 +254,9 @@ def main():
     if config.MULTI_MARKET_TRAINER_V3_ENABLED:
         threading.Thread(target=multi_market_trainer.run_forever,daemon=True).start()
 
+    # Apply an explicit, non-secret key-rotation marker before model gating.
+    # This may clear only a stale AUTH_ERROR circuit after an intentional key change.
+    R["model_key_rotation"]=model_budget.apply_key_rotation_marker()
     paper_execution.init_state(config.INITIAL_EQUITY,False)
     R["status"]="ok"
     refresh_observability()
