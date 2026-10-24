@@ -143,6 +143,37 @@ def _circuit(state):
         "opened_at_utc":c.get("opened_at_utc") if active else None,
     }
 
+def apply_key_rotation_marker():
+    """Apply an operator-confirmed API key rotation exactly once.
+
+    The marker is non-secret and must be changed only when OPENAI_API_KEY is
+    intentionally rotated. A changed marker may clear an AUTH_ERROR circuit,
+    but never quota, rate-limit, or generic API circuits.
+    """
+    marker=str(getattr(config,"MODEL_KEY_ROTATION_MARKER","") or "").strip()
+    if not marker:
+        return {"status":"NO_MARKER","changed":False,"cleared_auth_circuit":False}
+
+    with LOCK:
+        state=_clean_pending(_load_state())
+        previous=str(state.get("key_rotation_marker") or "")
+        if previous==marker:
+            return {"status":"UNCHANGED","changed":False,"cleared_auth_circuit":False}
+
+        circuit=state.get("circuit") or {}
+        cleared=bool(circuit.get("kind")=="AUTH_ERROR")
+        if cleared:
+            state["circuit"]={}
+        state["key_rotation_marker"]=marker
+        state["key_rotation_applied_at_utc"]=now().isoformat()
+        _save_state(state)
+        _append(EVENT_FILE,{
+            "timestamp_utc":now().isoformat(),
+            "event":"MODEL_KEY_ROTATION_MARKER_APPLIED",
+            "cleared_auth_circuit":cleared,
+        })
+        return {"status":"APPLIED","changed":True,"cleared_auth_circuit":cleared}
+
 def summary():
     with LOCK:
         state=_clean_pending(_load_state())
