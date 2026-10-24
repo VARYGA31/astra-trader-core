@@ -7,6 +7,7 @@ import config,news_listener,position_monitor,trade_cycle,paper_execution,executi
 import strategy_mode,micro_decision_gate,telegram_control,micro_stats,micro_market_stream,micro_second_shadow,crypto_shadow_lab,trade_universe,market_scanner,agent_council
 import adaptive_memory,adaptive_cost,adaptive_trainer,multi_market_trainer,strategy_tournament,alpha_factory,mission_control,model_budget
 import position_exit_guard
+import fok_shadow_analyzer,exit_shadow_tournament
 from astra_client import decide
 
 R={
@@ -48,6 +49,8 @@ R={
     "model_budget":model_budget.summary(),
     "market_scanner":market_scanner.summary(),
     "shadow_agent_council":agent_council.summary(),
+    "fok_shadow_analyzer":fok_shadow_analyzer.summary(168),
+    "exit_shadow_tournament":exit_shadow_tournament.summary(168),
 }
 
 def now():return datetime.now(timezone.utc)
@@ -133,6 +136,8 @@ def _heartbeat(mode):
                 "status_counts":agent_council.summary().get("status_counts") or {},
                 "strong_assets":agent_council.summary().get("strong_assets") or [],
             },
+            "fok_shadow_analyzer":fok_shadow_analyzer.summary(24),
+            "exit_shadow_tournament":exit_shadow_tournament.summary(168),
         }
         print(json.dumps(payload,ensure_ascii=False,separators=(",",":")),flush=True)
     except Exception as e:
@@ -164,6 +169,8 @@ def refresh_observability():
         R["model_budget"]=model_budget.summary()
         R["market_scanner"]=market_scanner.summary()
         R["shadow_agent_council"]=agent_council.summary()
+        R["fok_shadow_analyzer"]=fok_shadow_analyzer.summary(168)
+        R["exit_shadow_tournament"]=exit_shadow_tournament.summary(168)
     except Exception:
         # Diagnostics must never be able to degrade the trading worker.
         pass
@@ -307,6 +314,11 @@ def main():
                 R["last_position_check"]=check_positions()
                 if mode=="MICRO":
                     micro_second_shadow.evaluate_pending()
+                stage="fok_shadow_evaluate"
+                fok_shadow_analyzer.evaluate_due()
+                stage="exit_shadow_evaluate"
+                exit_shadow_tournament.evaluate_due()
+                stage="refresh_observability"
                 refresh_observability()
                 last_pos=t
 
