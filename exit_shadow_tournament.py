@@ -75,7 +75,7 @@ def _window_bars(open_event,bars,horizon_minutes):
     if not dt: return []
     start_ms=int(math.ceil(dt.timestamp()/60.0)*60*1000)
     end_ms=int((dt+timedelta(minutes=int(horizon_minutes))).timestamp()*1000)
-    return [b for b in bars if start_ms<=int(b.get("open_time_ms") or 0)<=end_ms]
+    return [b for b in bars if start_ms<=int(b.get("open_time_ms") or 0)<end_ms]
 
 
 def _signed_r(side,entry,price,risk):
