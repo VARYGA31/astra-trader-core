@@ -19,6 +19,9 @@ _ACCOUNT_INSTRUMENT_CACHE = {}
 class OKXAPIError(RuntimeError):
     pass
 
+class OKXHTTPError(OKXAPIError):
+    pass
+
 class OKXDemoAdapter:
     def __init__(self):
         if not config.OKX_API_KEY or not config.OKX_API_SECRET or not config.OKX_API_PASSPHRASE:
@@ -59,19 +62,56 @@ class OKXDemoAdapter:
             raise OKXAPIError(f"OKX_ERROR code={data.get('code')} msg={data.get('msg')} data={data.get('data')}")
         return data
 
+    def _safe_response_excerpt(self, response, limit=1200):
+        """Return exchange error text without ever echoing configured credentials."""
+        try:
+            text=response.text or ""
+        except Exception:
+            text=""
+        for secret in (
+            config.OKX_API_KEY,
+            config.OKX_API_SECRET,
+            config.OKX_API_PASSPHRASE,
+        ):
+            if secret:
+                text=text.replace(str(secret),"[REDACTED]")
+        return text[:max(0,int(limit))]
+
+    def _raise_private_http_error(self, response, method, request_path):
+        if int(getattr(response,"status_code",0) or 0) < 400:
+            return
+        excerpt=self._safe_response_excerpt(response)
+        code=msg=None
+        try:
+            payload=response.json()
+            if isinstance(payload,dict):
+                code=payload.get("code")
+                msg=payload.get("msg")
+        except Exception:
+            payload=None
+        raise OKXHTTPError(
+            "OKX_HTTP_ERROR "
+            f"status={getattr(response,'status_code',None)} "
+            f"method={str(method).upper()} "
+            f"path={request_path} "
+            f"api_code={code} "
+            f"api_msg={str(msg or '')[:300]} "
+            f"body={excerpt}"
+        )
+
     def private_get(self, path, params=None):
         qs = urlencode(params or {})
         request_path = path + (("?" + qs) if qs else "")
         headers = self._signed_headers("GET", request_path, "")
         r = self.session.get(self.base + request_path, headers=headers, timeout=15)
-        r.raise_for_status()
+        self._raise_private_http_error(r,"GET",request_path)
         return self._check(r.json())
 
     def private_post(self, path, payload):
         body = json.dumps(payload, separators=(",",":"))
         headers = self._signed_headers("POST", path, body)
         r = self.session.post(self.base + path, data=body, headers=headers, timeout=15)
-        r.raise_for_status()
+        self._raise_private_http_error(r,"POST",path)
         return self._check(r.json())
 
     def public_get(self, path, params=None):
