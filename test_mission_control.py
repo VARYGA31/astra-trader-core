@@ -10,6 +10,8 @@ def test_mission_control_is_read_only():
     assert "THE COUNCIL" in html
     assert "VEGA SCANNER" in html
     assert "modelBudgetMeta" in html
+    assert "FOK SHADOW ANALYZER" in html
+    assert "EXIT SHADOW TOURNAMENT" in html
     assert "estimated_cost_usd" in html
     assert "cost_remaining_usd" in html
     assert "evidence_rows" in html
@@ -38,6 +40,9 @@ def test_payload_contains_safe_research_layers():
     assert "status" in x["model_budget"],x
     assert "shadow_agent_council" in x,x
     assert "market_scanner" in x,x
+    assert "execution_research" in x,x
+    assert "fok_shadow" in x["execution_research"],x
+    assert "exit_tournament" in x["execution_research"],x
     assert "decision_funnel_24h" in x["diagnostics"],x
     assert "mtf_blockers_24h" in x["diagnostics"],x
     assert "mtf_shadow_replay" in x["diagnostics"],x
