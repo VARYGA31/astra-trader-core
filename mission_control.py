@@ -14,6 +14,8 @@ import observability
 import model_budget
 import agent_council
 import market_scanner
+import fok_shadow_analyzer
+import exit_shadow_tournament
 
 READ_ONLY=True
 
@@ -73,6 +75,10 @@ def build_payload(runtime):
         "model_budget":model_budget.summary(),
         "shadow_agent_council":agent_council.summary(),
         "market_scanner":market_scanner.summary(),
+        "execution_research":{
+            "fok_shadow":fok_shadow_analyzer.summary(168),
+            "exit_tournament":exit_shadow_tournament.summary(168),
+        },
         "diagnostics":{
             "top_skip_reasons":_top(runtime.get("skip_reasons") or {},10),
             "decision_funnel_24h":funnel24,
@@ -230,6 +236,15 @@ footer{color:#66728e;font-size:10px;text-align:center;padding:24px}
   <div class="label">Runtime health</div><div class="metric" id="stream">—</div><div class="kpi-sub" id="streamMeta">—</div>
  </section>
 
+ <section class="panel pad span6">
+  <div class="section-head"><div><div class="label">FOK SHADOW ANALYZER</div><div class="title">Missed-entry evidence</div></div></div>
+  <div class="metric" id="fokShadow">—</div><div class="kpi-sub" id="fokShadowMeta">—</div>
+ </section>
+ <section class="panel pad span6">
+  <div class="section-head"><div><div class="label">EXIT SHADOW TOURNAMENT</div><div class="title">Counterfactual exits</div></div></div>
+  <div class="metric" id="exitShadow">—</div><div class="kpi-sub" id="exitShadowMeta">—</div>
+ </section>
+
  <section class="panel pad span12">
   <div class="section-head"><div><div class="label">DIAGNOSTICS</div><div class="title">Last decisions / rejection telemetry</div></div></div>
   <div class="log" id="diag">Waiting for telemetry…</div>
@@ -290,8 +305,15 @@ function render(d){
  const tr=(d.research||{}).trainer||{};$('trainerR').textContent=fmt(tr.avg_net_r??tr.avg_r,3)+'R';$('trainerMeta').textContent=(tr.evaluated||0)+' evaluated · cost '+fmt(tr.avg_cost_r,3)+'R';
  const sh=(d.micro||{}).second_shadow||{};$('shadow2').textContent=(sh.evaluated||0)+' eval';$('shadow2Meta').textContent=(sh.wins||0)+'W/'+(sh.losses||0)+'L · PF '+fmt(sh.profit_factor,2)+' · NET '+money(sh.net_pnl_usd||0);
  const ws=s.micro_stream||{};$('stream').textContent=String(ws.status||'—');$('streamMeta').textContent='OKX WS '+(ws.connected?'connected':'not connected')+' · Shadow Lab '+String((s.shadow_lab||{}).status||'—');
+ const er=d.execution_research||{}, fs=er.fok_shadow||{}, et=er.exit_tournament||{};
+ const f240=(fs.by_horizon||{})['240']||{};
+ $('fokShadow').textContent=(fs.evaluated_rows||0)+' eval';
+ $('fokShadowMeta').textContent=(fs.candidates||0)+' FOK misses · 4h hit '+fmt(f240.hit_rate_pct,1)+'% · avg '+fmt(f240.avg_time_exit_r,3)+'R';
+ const leader=(et.leaderboard||[])[0]||{};
+ $('exitShadow').textContent=leader.policy||'collecting';
+ $('exitShadowMeta').textContent=(et.evaluated_trades||0)+' trades · avg NET '+fmt(leader.avg_net_r,3)+'R · PF '+fmt(leader.profit_factor_r,2);
  const dd=d.diagnostics||{};
- const diag={model_budget:mb,decision_funnel_24h:dd.decision_funnel_24h,mtf_blockers_24h:dd.mtf_blockers_24h,mtf_shadow_replay:dd.mtf_shadow_replay,shadow_agent_council:clast,market_scanner:ranks,last_trade_rejection:dd.last_trade_rejection,last_approved_trade:dd.last_approved_trade,last_model_decision:dd.last_model_decision};
+ const diag={model_budget:mb,decision_funnel_24h:dd.decision_funnel_24h,mtf_blockers_24h:dd.mtf_blockers_24h,mtf_shadow_replay:dd.mtf_shadow_replay,fok_shadow:fs,exit_tournament:et,shadow_agent_council:clast,market_scanner:ranks,last_trade_rejection:dd.last_trade_rejection,last_approved_trade:dd.last_approved_trade,last_model_decision:dd.last_model_decision};
  $('diag').textContent=JSON.stringify(diag,null,2);
  drawConstellation(genomes);
 }
