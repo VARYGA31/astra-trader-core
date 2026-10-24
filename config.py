@@ -50,6 +50,9 @@ MODEL_QUOTA_RETRY_SECONDS = int(os.getenv("MODEL_QUOTA_RETRY_SECONDS", "1800"))
 MODEL_RATE_LIMIT_COOLDOWN_SECONDS = int(os.getenv("MODEL_RATE_LIMIT_COOLDOWN_SECONDS", "300"))
 MODEL_API_ERROR_COOLDOWN_SECONDS = int(os.getenv("MODEL_API_ERROR_COOLDOWN_SECONDS", "120"))
 MODEL_AUTH_ERROR_COOLDOWN_SECONDS = int(os.getenv("MODEL_AUTH_ERROR_COOLDOWN_SECONDS", "3600"))
+# Non-secret operator-controlled nonce. Change only when OPENAI_API_KEY is intentionally rotated.
+# The worker uses it once to clear a stale AUTH_ERROR circuit; quota/rate-limit circuits are never cleared.
+MODEL_KEY_ROTATION_MARKER = os.getenv("MODEL_KEY_ROTATION_MARKER", "").strip()
 # Standard GPT-6.1 Sol text prices per 1M tokens. model_budget.py keeps explicit
 # historical mappings for Astra/Luna rows so old usage is not mispriced.
 MODEL_PRICE_INPUT_USD_PER_M = float(os.getenv("MODEL_PRICE_INPUT_USD_PER_M", "2.0"))
