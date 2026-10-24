@@ -243,6 +243,15 @@ def open_trade(decision, risk):
             "entry_limit_price":(opened or {}).get("limit_price"),
             "execution_quality":quality_guard,
             "entry_attempts":attempts,
+            # Research-only evidence for FOK Shadow Analyzer. This does not
+            # change the order, retry, risk or execution policy.
+            "shadow_risk_geometry":{
+                "stop_loss":risk.get("stop_loss"),
+                "take_profit_1":risk.get("take_profit_1"),
+                "take_profit_2":risk.get("take_profit_2"),
+                "position_notional_usd":risk.get("position_notional_usd"),
+                "leverage":risk.get("leverage"),
+            },
         }
 
     entry = float(opened["entry"])

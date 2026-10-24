@@ -561,6 +561,18 @@ ALPHA_FACTORY_DECAY_RECENT_SAMPLES = int(os.getenv("ALPHA_FACTORY_DECAY_RECENT_S
 ALPHA_FACTORY_DECAY_DROP_R = float(os.getenv("ALPHA_FACTORY_DECAY_DROP_R", "0.15"))
 ALPHA_FACTORY_SNAPSHOT_MAX_AGE_SECONDS = int(os.getenv("ALPHA_FACTORY_SNAPSHOT_MAX_AGE_SECONDS", "900"))
 
+# ===== Execution / Exit Shadow Labs =====
+# Passive evidence only. These modules never place, cancel, amend or close orders.
+FOK_SHADOW_ANALYZER_ENABLED = os.getenv("FOK_SHADOW_ANALYZER_ENABLED", "true").lower() == "true"
+FOK_SHADOW_HORIZONS_MINUTES = tuple(
+    int(x.strip()) for x in os.getenv("FOK_SHADOW_HORIZONS_MINUTES", "5,15,60,240").split(",")
+    if x.strip()
+)
+FOK_SHADOW_MAX_PENDING = int(os.getenv("FOK_SHADOW_MAX_PENDING", "500"))
+EXIT_SHADOW_TOURNAMENT_ENABLED = os.getenv("EXIT_SHADOW_TOURNAMENT_ENABLED", "true").lower() == "true"
+EXIT_SHADOW_HORIZON_MINUTES = int(os.getenv("EXIT_SHADOW_HORIZON_MINUTES", "240"))
+EXIT_SHADOW_MAX_PENDING = int(os.getenv("EXIT_SHADOW_MAX_PENDING", "500"))
+
 # ===== ASTRA Mission Control =====
 # Read-only web UI. If a token is configured, every data endpoint requires a
 # Bearer token; /health remains public and contains only minimal health data.

@@ -17,6 +17,7 @@ from pathlib import Path
 
 import config
 import adaptive_memory
+import fok_shadow_analyzer
 
 DIR = Path(config.STATE_DIR)
 STATE = DIR / "observability_state.json"
@@ -281,6 +282,10 @@ def record_decision(package, gate, decision, execution, model_called=False):
                 "ticker_latency_ms":execution.get("ticker_latency_ms"),
                 "tradability_reason":((execution.get("tradability") or {}).get("reason")),
                 "tradability_instrument":((execution.get("tradability") or {}).get("instrument")),
+                "pre_order_reference":execution.get("pre_order_reference"),
+                "entry_limit_price":execution.get("entry_limit_price"),
+                "order_state":execution.get("order_state"),
+                "entry_attempt_count":len(execution.get("entry_attempts") or []),
                 "micro_net_edge":(
                     (execution.get("micro_net_edge") or {})
                     or ((execution.get("execution_quality") or {}).get("micro_net_edge") or {})
@@ -288,6 +293,12 @@ def record_decision(package, gate, decision, execution, model_called=False):
             },
         }
         _append_jsonl(DECISIONS, row)
+        # Passive FOK evidence capture. Any failure here is diagnostic-only and
+        # must never affect live order/risk behavior.
+        try:
+            fok_shadow_analyzer.record_rejection(package,decision,execution)
+        except Exception:
+            pass
 
         s = load_state()
         s["decision_total"] = int(s.get("decision_total",0)) + 1
