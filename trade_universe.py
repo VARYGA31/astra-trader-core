@@ -27,7 +27,10 @@ def normal_assets(universe=None):
     if config.NORMAL_DEFI_TRADING_ENABLED:
         u=universe if isinstance(universe,dict) else defi_universe.summary()
         eligible=[]
-        for row in (u.get("eligible") or []):
+        # Never promote stale public liquidity data into live tradability.
+        # On refresh failure, keep core assets but fail closed for DeFi.
+        source_rows=[] if u.get("status") in {"STALE","FAILED"} else (u.get("eligible") or [])
+        for row in source_rows:
             asset=str(row.get("asset") or "").upper()
             try: spread=float(row.get("spread_pct"))
             except Exception: continue

@@ -29,6 +29,14 @@ class StopAuditTests(unittest.TestCase):
 
 
 class UniverseDiagnosticTests(unittest.TestCase):
+    def test_stale_liquidity_data_fails_closed_for_live_defi(self):
+        stale={"status":"STALE","eligible":[{"asset":"AAVE","spread_pct":0.01}]}
+        with patch.object(trade_universe.config,"NORMAL_DEFI_TRADING_ENABLED",True):
+            with patch.object(trade_universe.defi_universe,"summary",return_value=stale):
+                with patch.object(trade_universe.OKXDemoAdapter,"account_tradability",side_effect=AssertionError("should not query")):
+                    selected=trade_universe.normal_assets()
+        self.assertNotIn("AAVE",selected)
+
     def test_passive_exclusions_do_not_affect_selected_assets(self):
         evidence={"status":"OK","generated_at_utc":"2026-10-25T00:00:00+00:00",
                   "eligible":[{"asset":"AAVE","instrument":"AAVE-USDT-SWAP","spread_pct":0.15},
