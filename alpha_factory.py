@@ -305,8 +305,15 @@ def _evaluate_genome(key,rows):
 
 def analyze_rows(outcomes=None,candidates=None):
     rows=_enriched_rows(outcomes,candidates)
+    # Global chronological holdout: no pattern discovery, genome ranking or
+    # development OOS metric can inspect these last rows. This remains a
+    # *rolling research holdout*, not an immutable forward live promotion test.
+    frac=max(0.10,min(0.35,float(config.ALPHA_FACTORY_LOCKED_HOLDOUT_FRACTION)))
+    n_holdout=max(1,int(round(len(rows)*frac))) if rows else 0
+    development=rows[:-n_holdout] if n_holdout else []
+    holdout=rows[-n_holdout:] if n_holdout else []
     counts=Counter()
-    for row in rows:
+    for row in development:
         counts.update(_pattern_keys(row))
 
     min_n=int(config.ALPHA_FACTORY_MIN_TOTAL_SAMPLES)
@@ -319,13 +326,33 @@ def analyze_rows(outcomes=None,candidates=None):
     wanted=set(keys)
     buckets=defaultdict(list)
     if wanted:
-        for row in rows:
+        for row in development:
             for key in _pattern_keys(row):
                 if key in wanted:buckets[key].append(row)
 
     genomes=[_evaluate_genome(k,buckets[k]) for k in keys]
     genomes.sort(key=lambda x:(x["score"],x["oos"]["samples"]),reverse=True)
     genomes=genomes[:int(config.ALPHA_FACTORY_MAX_GENOMES)]
+    # Annotate selected genomes only AFTER ranking/truncation. The holdout
+    # metrics never influence candidate eligibility, score, or ordering.
+    if genomes and holdout:
+        selected={(g["asset_scope"],g["strategy"],g["direction"],tuple(g["genes"])):g
+                  for g in genomes}
+        held_buckets=defaultdict(list)
+        for row in holdout:
+            for key in _pattern_keys(row):
+                if key in selected:held_buckets[key].append(row)
+        for key,g in selected.items():
+            hm=_metrics(held_buckets[key])
+            g["locked_holdout"]=hm
+            g["holdout_evidence_status"]=(
+                "INSUFFICIENT" if hm["samples"]<int(config.ALPHA_FACTORY_MIN_OOS_SAMPLES)
+                else "POSITIVE" if hm["avg_net_r"]>0 else "NON_POSITIVE"
+            )
+    for g in genomes:
+        g.setdefault("locked_holdout",_metrics([]))
+        g.setdefault("holdout_evidence_status","INSUFFICIENT")
+        g["selection_trials"] = len(keys)
     status_counts=Counter(x["status"] for x in genomes)
 
     gene_counts=Counter()
@@ -339,7 +366,11 @@ def analyze_rows(outcomes=None,candidates=None):
         "source":"ADAPTIVE_TRAINER_COST_AWARE_OUTCOMES",
         "lookback_hours":int(config.ALPHA_FACTORY_LOOKBACK_HOURS),
         "evidence_rows":len(rows),
+        "development_rows":len(development),
+        "locked_holdout_rows":len(holdout),
+        "locked_holdout_note":"Rolling chronological audit only; repeated refreshes reuse evidence. No promotion authority.",
         "discovered_patterns":len(counts),
+        "selection_trials":len(keys),
         "evaluated_genomes":len(genomes),
         "status_counts":dict(status_counts),
         "gene_catalog":[{"gene":k,"evidence_rows":v} for k,v in gene_counts.most_common(30)],

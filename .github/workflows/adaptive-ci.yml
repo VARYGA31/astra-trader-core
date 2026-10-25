@@ -45,6 +45,8 @@ jobs:
         run: python test_equity_guard.py
       - name: Worker circuit and MICRO stop protection regression
         run: python test_worker_safety.py
+      - name: Passive NORMAL stop-distance audit regression
+        run: python test_normal_stop_shadow.py
       - name: OKX private HTTP diagnostics regression
         run: python test_okx_http_diagnostics.py
       - name: Strategy Tournament v5 regression
