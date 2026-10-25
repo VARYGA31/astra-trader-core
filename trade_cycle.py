@@ -402,7 +402,7 @@ def execute(decision):
         "open_positions":s["open_positions"],
         "current_exposure_usd":s["current_exposure_usd"],
         "asset_already_open":g.get("asset_already_open",False),
-        "critical_news_verified":True,
+        "critical_news_verified":bool(g.get("critical_news_verified")),
         "strategy_mode":decision_mode,
     }
     r = risk_engine.evaluate(rinput)
