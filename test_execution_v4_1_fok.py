@@ -25,7 +25,7 @@ class FakeAdapter:
         return {"available":True,"reason":"OK","instrument":f"{asset}-USDT-SWAP"}
 
     def exchange_active_summary(self):
-        return {"open_positions":0,"current_exposure_usd":0.0,"assets":[],"details":[]}
+        return {"open_positions":0,"current_exposure_usd":0.0,"unrealized_pnl_usd":0.0,"assets":[],"details":[]}
 
     def executable_quote(self,asset,action):
         self.quote_n+=1
@@ -60,6 +60,7 @@ class FakeAdapter:
 
 old_adapter=execution_router.OKXDemoAdapter
 old_status=execution_router.demo_ledger.status
+old_equity=execution_router.equity_guard.snapshot
 old_register=execution_router.okx_position_monitor.register_trade
 old_append=execution_router.trade_journal.append_event
 old_notify=execution_router.telegram_notifier.notify_open
@@ -69,7 +70,8 @@ old_mode=config.EXECUTION_MODE
 old_order=config.OKX_ENTRY_ORDER_TYPE
 try:
     execution_router.OKXDemoAdapter=FakeAdapter
-    execution_router.demo_ledger.status=lambda: {"equity":5000.0}
+    execution_router.demo_ledger.status=lambda: {"equity":5000.0,"initial_equity":5000.0,"daily_pnl":0.0}
+    execution_router.equity_guard.snapshot=lambda ledger,**kwargs: {"verified":True,"equity":5000.0,"daily_pnl":0.0}
     execution_router.okx_position_monitor.register_trade=lambda record: {"status":"OK"}
     execution_router.trade_journal.append_event=lambda event: {"status":"OK"}
     execution_router.telegram_notifier.notify_open=lambda record: {"status":"OK"}
@@ -101,6 +103,7 @@ try:
 finally:
     execution_router.OKXDemoAdapter=old_adapter
     execution_router.demo_ledger.status=old_status
+    execution_router.equity_guard.snapshot=old_equity
     execution_router.okx_position_monitor.register_trade=old_register
     execution_router.trade_journal.append_event=old_append
     execution_router.telegram_notifier.notify_open=old_notify

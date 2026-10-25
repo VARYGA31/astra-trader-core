@@ -8,6 +8,7 @@ import strategy_mode, scalp_gate, micro_gate
 from okx_demo_adapter import OKXDemoAdapter
 import execution_router
 import demo_ledger
+import equity_guard
 import okx_position_monitor
 
 def parse_ts(x):
@@ -53,21 +54,30 @@ def account_state():
     if config.EXECUTION_MODE == "okx_demo":
         ledger = demo_ledger.status()
         active = okx_position_monitor.active_summary()
+        upl=active.get("unrealized_pnl_usd",0.0 if not active.get("open_positions") else None)
+        equity = equity_guard.snapshot(ledger,unrealized_pnl=upl)
+        dd=(ledger["initial_equity"]-equity["equity"])/ledger["initial_equity"] if equity.get("verified") else 0.0
+        if equity.get("verified") and dd>=config.MAX_DRAWDOWN_PCT:
+            demo_ledger.halt_for_mark_to_market_drawdown()
         return {
             "initial_equity":ledger["initial_equity"],
-            "equity":ledger["equity"],
-            "daily_pnl":ledger["daily_pnl"],
+            "equity":equity.get("equity",ledger["equity"]),
+            "daily_pnl":equity.get("daily_pnl",ledger["daily_pnl"]),
+            "equity_verified":bool(equity.get("verified")),
+            "equity_source":equity.get("source"),
+            "equity_error":equity.get("reason"),
             "open_positions":active["open_positions"],
             "current_exposure_usd":active["current_exposure_usd"],
             "open_assets":active.get("assets",[]),
             "exchange_positions":active.get("details",[]),
-            "trading_halted":ledger["trading_halted"],
+            "trading_halted":bool(ledger["trading_halted"] or not equity.get("verified") or dd>=config.MAX_DRAWDOWN_PCT),
         }
 
     s = paper_execution.status()
     return {
         "initial_equity":s.get("initial_equity"),
         "equity":s.get("account_equity"),
+        "equity_verified":True,
         "daily_pnl":s.get("daily_realized_pnl",0),
         "open_positions":s.get("open_positions_count",0),
         "current_exposure_usd":s.get("current_exposure_usd",0),
@@ -136,6 +146,9 @@ def execute(decision):
     decision["timeframe"] = decision.get("timeframe") or ("1m" if decision_mode=="MICRO" else "5m" if decision_mode=="SCALP" else config.TRADING_TIMEFRAME)
     p = prepare(asset,12,decision_mode)
     g = p["guards"]
+
+    if not p["account_state"].get("equity_verified",False):
+        return {"status":"REJECTED","reason":"OKX_EQUITY_UNAVAILABLE","stage":"account_equity"}
 
     if g.get("market_stale") or not g.get("market_ok"):
         return {"status":"REJECTED","reason":"MARKET_DATA_GUARD"}

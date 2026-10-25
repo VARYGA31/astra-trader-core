@@ -3,6 +3,7 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 import time
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_DOWN, ROUND_UP
@@ -741,6 +742,8 @@ class OKXDemoAdapter:
         assets = []
         exposure = 0.0
         details = []
+        unrealized_pnl = 0.0
+        upl_complete = True
         inst_to_asset = {self.inst_id(a): a for a in config.ALLOWED_ASSETS}
         for p in rows:
             try:
@@ -755,6 +758,13 @@ class OKXDemoAdapter:
             notion = self.position_notional_usd(asset, p)
             assets.append(asset)
             exposure += notion
+            try:
+                upl=float(p["upl"])
+                if not math.isfinite(upl):
+                    raise ValueError("NONFINITE_UPL")
+                unrealized_pnl += upl
+            except (KeyError,ValueError,TypeError):
+                upl_complete = False
             details.append({
                 "asset":asset,
                 "instId":p.get("instId"),
@@ -763,10 +773,12 @@ class OKXDemoAdapter:
                 "notional_usd":notion,
                 "avgPx":p.get("avgPx"),
                 "markPx":p.get("markPx"),
+                "upl_usd":p.get("upl"),
             })
         return {
             "open_positions":len(assets),
             "current_exposure_usd":exposure,
+            "unrealized_pnl_usd":unrealized_pnl if upl_complete else None,
             "assets":assets,
             "details":details,
         }
