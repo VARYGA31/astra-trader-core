@@ -9,12 +9,15 @@ import adaptive_memory,adaptive_cost,adaptive_trainer,multi_market_trainer,strat
 import position_exit_guard
 import fok_shadow_analyzer,exit_shadow_tournament
 import execution_audit
+import telegram_notifier
 from astra_client import decide
 
 R={
     "status":"starting",
     "started_at_utc":datetime.now(timezone.utc).isoformat(),
     "last_error":None,
+    "worker_exception_circuit":{"active":False,"consecutive":0,"threshold":config.WORKER_EXCEPTION_PAUSE_THRESHOLD},
+    "equity_guard":{"verified":None,"status":"NOT_YET_CHECKED"},
     "execution_mode":config.EXECUTION_MODE,
     "decision_engine_enabled":bool(config.AUTO_DECISION),
     "trade_execution_enabled":bool(config.AUTO_PAPER_EXECUTION),
@@ -56,6 +59,28 @@ R={
 
 def now():return datetime.now(timezone.utc)
 
+def _trip_worker_circuit(consecutive,stage,error_type):
+    """Latch new-entry pause; never disable position monitoring or exits."""
+    active=consecutive>=config.WORKER_EXCEPTION_PAUSE_THRESHOLD
+    state={"active":active,"consecutive":consecutive,
+           "threshold":config.WORKER_EXCEPTION_PAUSE_THRESHOLD,
+           "last_stage":stage,"last_error_type":error_type}
+    if active and not (R.get("worker_exception_circuit") or {}).get("active"):
+        # In-memory latch also works if the persistent mode file cannot write.
+        R["worker_exception_circuit"]=state
+        try:
+            with strategy_mode.RUNTIME_LOCK:
+                strategy_mode.set_mode("PAUSED",changed_by="WORKER_EXCEPTION_CIRCUIT")
+        except Exception:
+            state["mode_persist_failed"]=True
+        try:
+            telegram_notifier.notify_system(
+                f"ASTRA ENTRY CIRCUIT PAUSED: {consecutive} worker errors. "
+                f"Stage={stage}, type={error_type}. Position monitoring remains active.",level="RISK")
+        except Exception:
+            state["alert_failed"]=True
+    return state
+
 def _heartbeat(mode):
     """Emit a compact, secret-free runtime summary for Railway diagnostics."""
     try:
@@ -76,6 +101,8 @@ def _heartbeat(mode):
             "execution_mode":config.EXECUTION_MODE,
             "decision_engine":bool(config.AUTO_DECISION),
             "trade_execution":bool(config.AUTO_PAPER_EXECUTION),
+            "worker_exception_circuit":R.get("worker_exception_circuit"),
+            "equity_guard":R.get("equity_guard"),
             "multi_market_lab":"ON" if config.MULTI_MARKET_TRAINER_V3_ENABLED else "OFF",
             "micro":{
                 "checks_6h":ms.get("checks",0),
@@ -269,6 +296,7 @@ def main():
     last_heartbeat=0
     last_decision={a:0 for a in config.ALLOWED_ASSETS}
     last_mode=None
+    consecutive_failures=0
 
     while True:
         t=time.time()
@@ -340,7 +368,7 @@ def main():
                 last_exit=t
 
             # Only two tradable strategies exist now: NORMAL and MICRO.
-            if config.AUTO_DECISION and mode!="PAUSED":
+            if config.AUTO_DECISION and mode!="PAUSED" and not R["worker_exception_circuit"].get("active"):
                 assets=trade_universe.assets_for_mode(mode)
                 interval=config.MICRO_DECISION_INTERVAL_SECONDS if mode=="MICRO" else config.DECISION_INTERVAL_SECONDS
                 gate_module=micro_decision_gate if mode=="MICRO" else decision_gate
@@ -349,6 +377,12 @@ def main():
                     if t-last_decision.get(a,0)>=interval or a in high:
                         stage=f"decision_prepare:{a}"
                         p=trade_cycle.prepare(a,12,mode)
+                        account=p.get("account_state") or {}
+                        R["equity_guard"]={
+                            "verified":account.get("equity_verified"),
+                            "source":account.get("equity_source"),
+                            "reason":account.get("equity_error"),
+                        }
                         stage=f"market_scanner:{a}"
                         market_scanner.observe(p)
                         stage=f"decision_gate:{a}"
@@ -408,11 +442,17 @@ def main():
 
             R["status"]="ok"
             R["last_error"]=None
+            consecutive_failures=0
+            if not R["worker_exception_circuit"].get("active"):
+                R["worker_exception_circuit"]["consecutive"]=0
             if t-last_heartbeat>=config.STATS_HEARTBEAT_SECONDS:
                 _heartbeat(mode)
                 last_heartbeat=t
 
         except Exception as e:
+            consecutive_failures+=1
+            if not R["worker_exception_circuit"].get("active"):
+                R["worker_exception_circuit"]=_trip_worker_circuit(consecutive_failures,stage,type(e).__name__)
             R["status"]="degraded"
             R["last_error"]=traceback.format_exc()[-5000:]
             # Secret-free runtime diagnostic. Do not print request headers,

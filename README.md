@@ -7,7 +7,7 @@ Current target exchange: **OKX Demo Trading**. Live trading is intentionally not
 ASTRA intentionally has only two trading strategies:
 
 - **NORMAL** — ASTRA 4H → 1H → 15M across BTC/ETH/GRAM, XAU (when account-eligible), and a dynamic top-N liquid DeFi universe
-- **MICRO v2** — 5M → 3M → 1M, OKX-native order flow, fee-aware NET-edge gate, hard 5-minute exit
+- **MICRO v2** — 5M → 3M → 1M, OKX-native order flow, fee-aware NET-edge gate, worker-enforced best-effort 5-minute exit (not guaranteed during outages; exchange SL stays active)
 
 `PAUSED` is a technical safety state: it blocks new entries while monitoring and exchange-side protection continue.
 

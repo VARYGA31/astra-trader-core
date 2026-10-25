@@ -30,6 +30,14 @@ def _micro_time_stop_due(rec, now_ts=None):
     current=time.time() if now_ts is None else float(now_ts)
     return current-opened_ts>=float(config.MICRO_MAX_HOLD_SECONDS)
 
+def _micro_overdue_seconds(rec,now_ts=None):
+    try:
+        opened_ts=datetime.fromisoformat(str(rec["opened_at_utc"]).replace("Z","+00:00")).timestamp()
+        return round(max(0.0,(time.time() if now_ts is None else float(now_ts))-opened_ts-
+                         float(config.MICRO_MAX_HOLD_SECONDS)),3)
+    except (KeyError,TypeError,ValueError):
+        return None
+
 def _atomic_save(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -247,11 +255,12 @@ def check_once():
 
         qty = abs(float(pos.get("pos") or 0))
 
-        # MICRO is a 1-5 minute experiment. It never turns into an accidental
-        # swing position: after the hard hold limit, close the remaining size.
+        # Best-effort worker-enforced MICRO time exit. Exchange-side SL remains
+        # the only protection that survives a complete worker outage.
         if qty>0 and _micro_time_stop_due(rec):
             try:
-                cleanup=adapter.cancel_attached_algos(asset,rec.get("order_id"))
+                overdue=_micro_overdue_seconds(rec)
+                # Keep exchange-side SL alive until the reduce-only close fills.
                 close=adapter.close_market(asset,str(rec.get("side") or "").upper(),qty)
                 row=(close.get("data") or [{}])[0]
                 close_ord=row.get("ordId")
@@ -260,9 +269,14 @@ def check_once():
                 terminal=adapter.wait_filled(asset,close_ord,timeout=15) or {}
                 if terminal.get("state")!="filled":
                     raise RuntimeError(f"MICRO_TIME_STOP_CLOSE_NOT_FILLED:{terminal}")
+                try:
+                    cleanup=adapter.cancel_attached_algos(asset,rec.get("order_id"))
+                except Exception as exc:
+                    cleanup={"status":"FAILED","error_type":type(exc).__name__}
                 rec["forced_close_reason"]="MICRO_TIME_STOP"
                 rec["forced_close_details"]={
                     "max_hold_seconds":config.MICRO_MAX_HOLD_SECONDS,
+                    "overdue_seconds":overdue,
                     "close_order_id":close_ord,
                     "algo_cleanup":cleanup,
                 }
@@ -275,6 +289,7 @@ def check_once():
                     "qty_contracts":qty,
                     "close_order_id":close_ord,
                     "max_hold_seconds":config.MICRO_MAX_HOLD_SECONDS,
+                    "overdue_seconds":overdue,
                     "timestamp_utc":now_iso(),
                 })
                 results.append({"asset":asset,"status":"MICRO_TIME_STOP_FILLED","close_order_id":close_ord})
