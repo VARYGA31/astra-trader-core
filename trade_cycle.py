@@ -10,6 +10,7 @@ import execution_router
 import demo_ledger
 import equity_guard
 import okx_position_monitor
+import trade_journal
 
 def parse_ts(x):
     try:
@@ -405,6 +406,14 @@ def execute(decision):
         "critical_news_verified":bool(g.get("critical_news_verified")),
         "strategy_mode":decision_mode,
     }
+    # Passive evidence collection; this must never veto or modify Risk Engine.
+    try:
+        import normal_stop_shadow
+        stop_audit=normal_stop_shadow.examine(rinput)
+        if stop_audit:
+            trade_journal.append_event({"event":"NORMAL_STOP_DISTANCE_SHADOW",**stop_audit})
+    except Exception:
+        pass
     r = risk_engine.evaluate(rinput)
     if r.get("status") != "APPROVED":
         return {"status":"REJECTED","stage":"risk_engine","risk":r}
