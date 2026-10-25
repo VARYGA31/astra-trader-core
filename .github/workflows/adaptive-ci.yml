@@ -39,6 +39,8 @@ jobs:
         run: python test_execution_v4_1_fok.py
       - name: FOK + exit shadow labs regression
         run: python test_execution_shadow_labs.py
+      - name: Passive DeFi and stop-execution diagnostics regression
+        run: python test_diagnostic_audit.py
       - name: OKX private HTTP diagnostics regression
         run: python test_okx_http_diagnostics.py
       - name: Strategy Tournament v5 regression
