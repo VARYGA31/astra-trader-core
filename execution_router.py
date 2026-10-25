@@ -6,6 +6,7 @@ import config
 import telegram_notifier
 import trade_journal
 import demo_ledger
+import equity_guard
 from okx_demo_adapter import OKXDemoAdapter
 import okx_position_monitor
 import execution_quality
@@ -74,7 +75,17 @@ def open_trade(decision, risk):
                 }
 
     ledger = demo_ledger.status()
-    equity = float(ledger.get("equity") or config.INITIAL_EQUITY)
+    upl=summary.get("unrealized_pnl_usd",0.0 if not summary.get("open_positions") else None)
+    verified_equity=equity_guard.snapshot(ledger,unrealized_pnl=upl)
+    if not verified_equity.get("verified"):
+        return {"status":"REJECTED","reason":"OKX_EQUITY_UNAVAILABLE_EXCHANGE_GUARD"}
+    equity = float(verified_equity["equity"])
+    dd=(float(ledger["initial_equity"])-equity)/float(ledger["initial_equity"])
+    if dd>=float(config.MAX_DRAWDOWN_PCT):
+        demo_ledger.halt_for_mark_to_market_drawdown()
+        return {"status":"REJECTED","reason":"MAX_DRAWDOWN_EXCHANGE_GUARD"}
+    if float(verified_equity["daily_pnl"])<=-(float(ledger["initial_equity"])*config.DAILY_LOSS_LIMIT_PCT):
+        return {"status":"REJECTED","reason":"DAILY_LOSS_EXCHANGE_GUARD"}
     exposure_now = float(summary.get("current_exposure_usd", 0))
     proposed = float(risk.get("position_notional_usd", 0))
     exposure_cap_pct = config.MICRO_MAX_TOTAL_EXPOSURE_PCT if strategy_mode=="MICRO" else config.MAX_TOTAL_EXPOSURE_PCT

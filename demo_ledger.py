@@ -85,5 +85,12 @@ def apply_closed_trade(pnl_usd):
         _save_unlocked(s)
         return _status_unlocked()
 
+def halt_for_mark_to_market_drawdown():
+    """Make a breached exchange-equity drawdown halt sticky across redeploys."""
+    with LOCK:
+        s=_load_unlocked()
+        s["trading_halted"]=True
+        _save_unlocked(s)
+
 if __name__ == "__main__":
     print(json.dumps(status(), ensure_ascii=False))
