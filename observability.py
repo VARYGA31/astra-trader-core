@@ -282,6 +282,9 @@ def record_decision(package, gate, decision, execution, model_called=False):
                 "ticker_latency_ms":execution.get("ticker_latency_ms"),
                 "tradability_reason":((execution.get("tradability") or {}).get("reason")),
                 "tradability_instrument":((execution.get("tradability") or {}).get("instrument")),
+                "current_exposure_usd":execution.get("current_exposure_usd"),
+                "proposed_notional_usd":execution.get("proposed_notional_usd"),
+                "exposure_cap_usd":execution.get("exposure_cap_usd"),
                 "pre_order_reference":execution.get("pre_order_reference"),
                 "entry_limit_price":execution.get("entry_limit_price"),
                 "order_state":execution.get("order_state"),
@@ -772,6 +775,9 @@ def _decision_funnel(since_utc=None):
                 "ticker_latency_ms":ex.get("ticker_latency_ms"),
                 "tradability_reason":ex.get("tradability_reason"),
                 "tradability_instrument":ex.get("tradability_instrument"),
+                "current_exposure_usd":ex.get("current_exposure_usd"),
+                "proposed_notional_usd":ex.get("proposed_notional_usd"),
+                "exposure_cap_usd":ex.get("exposure_cap_usd"),
             }
 
     asset_out={}

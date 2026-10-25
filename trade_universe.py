@@ -61,8 +61,34 @@ def assets_for_mode(mode,universe=None):
     return normal_assets(universe)
 
 def summary(universe=None):
-    u=universe if isinstance(universe,dict) else None
-    normal=normal_assets(u)
+    # Preserve the existing live selection path exactly. Read its cached
+    # public-data evidence only after selection, for passive diagnostics.
+    normal=normal_assets(universe)
+    u=universe if isinstance(universe,dict) else (
+        defi_universe.cached_summary() if config.NORMAL_DEFI_TRADING_ENABLED else None
+    )
+    active=set(normal)
+    eligible={str(r.get("asset") or "").upper():r for r in ((u or {}).get("eligible") or [])}
+    unavailable={str(r.get("asset") or "").upper():r for r in ((u or {}).get("unavailable") or [])}
+    selection={}
+    for asset in config.DEFI_TRADE_WATCHLIST:
+        row=eligible.get(asset)
+        denied=unavailable.get(asset)
+        if asset in active:
+            reason="ACTIVE"
+        elif denied:
+            reason=str(denied.get("reason") or "PUBLIC_INSTRUMENT_UNAVAILABLE")
+        elif row:
+            reason=("TRADE_SPREAD_TOO_WIDE" if float(row.get("spread_pct") or 0)>
+                    float(config.DEFI_TRADE_MAX_SPREAD_PCT) else "ACCOUNT_OR_TOP_N_FILTER")
+        else:
+            reason="NOT_IN_ELIGIBLE_UNIVERSE"
+        selection[asset]={
+            "active":asset in active,
+            "reason":reason,
+            "spread_pct":(row or denied or {}).get("spread_pct"),
+            "instrument":(row or denied or {}).get("instrument"),
+        }
     return {
         "normal_assets":list(normal),
         "micro_assets":list(config.MICRO_ALLOWED_ASSETS),
@@ -70,4 +96,11 @@ def summary(universe=None):
         "defi_enabled":bool(config.NORMAL_DEFI_TRADING_ENABLED),
         "defi_active":[x for x in normal if x in set(config.DEFI_TRADE_WATCHLIST)],
         "defi_top_n":int(config.NORMAL_DEFI_TOP_N),
+        # Diagnostics only: does not participate in universe selection.
+        "defi_selection":{
+            "status":(u or {}).get("status","DISABLED"),
+            "generated_at_utc":(u or {}).get("generated_at_utc"),
+            "refresh_error":str((u or {}).get("refresh_error") or "")[:160] or None,
+            "assets":selection,
+        },
     }

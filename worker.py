@@ -8,6 +8,7 @@ import strategy_mode,micro_decision_gate,telegram_control,micro_stats,micro_mark
 import adaptive_memory,adaptive_cost,adaptive_trainer,multi_market_trainer,strategy_tournament,alpha_factory,mission_control,model_budget
 import position_exit_guard
 import fok_shadow_analyzer,exit_shadow_tournament
+import execution_audit
 from astra_client import decide
 
 R={
@@ -110,6 +111,7 @@ def _heartbeat(mode):
                 "trades_by_asset":(perf24.get("by_asset") or {}),
                 "recent_closed":diag24.get("recent_closed") or [],
             },
+            "stop_execution_audit":execution_audit.stop_exit_audit(diag24.get("recent_closed") or []),
             "shadow_lab_status":crypto_shadow_lab.STATE.get("status"),
             "model_budget":{
                 "status":model_budget.summary().get("status"),
