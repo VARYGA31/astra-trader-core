@@ -48,7 +48,10 @@ def test_second_signal_is_shadow_only():
     try:
         with tempfile.TemporaryDirectory() as td:
             micro_decision_gate.STATE_FILE=Path(td)/"gate.json"
-            g=micro_decision_gate.evaluate(_package(),False)
+            package=_package("BTC")
+            package["account_state"]["open_assets"]=["ETH"]
+            package["account_state"]["exchange_positions"]=[{"asset":"ETH","side":"SHORT"}]
+            g=micro_decision_gate.evaluate(package,False)
             assert g["call_model"] is True,g
             assert g["second_position_shadow"] is True,g
     finally:
