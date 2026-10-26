@@ -136,6 +136,8 @@ def execute(decision):
     action = str(decision.get("action","")).upper()
     if action == "WAIT":
         return {"status":"NO_TRADE","reason":"ASTRA_WAIT"}
+    if asset in config.DISABLED_ENTRY_ASSETS:
+        return {"status":"REJECTED","reason":"ASSET_NEW_ENTRIES_DISABLED"}
 
     decision_mode=str(decision.get("strategy_mode") or "NORMAL").upper()
     active_mode=strategy_mode.get_mode()

@@ -3,7 +3,7 @@
 
 NORMAL = core crypto + optional XAU + a dynamic top-N DeFi set chosen from
 public OKX liquidity/spread data.
-MICRO remains intentionally limited to BTC/ETH/GRAM.
+MICRO remains intentionally limited to BTC/ETH; GRAM is exit-only.
 """
 import config
 import defi_universe
@@ -19,7 +19,7 @@ def _dedupe(xs):
     return out
 
 def normal_assets(universe=None):
-    assets=list(config.NORMAL_CORE_ASSETS)
+    assets=[a for a in config.NORMAL_CORE_ASSETS if a not in config.DISABLED_ENTRY_ASSETS]
 
     if config.NORMAL_GOLD_TRADING_ENABLED:
         assets.append("XAU")
@@ -53,7 +53,7 @@ def normal_assets(universe=None):
         )
         assets.extend(str(x.get("asset")).upper() for x in eligible[:max(0,int(config.NORMAL_DEFI_TOP_N))])
 
-    return tuple(_dedupe(assets))
+    return tuple(a for a in _dedupe(assets) if a not in config.DISABLED_ENTRY_ASSETS)
 
 def assets_for_mode(mode,universe=None):
     mode=str(mode or "NORMAL").upper()

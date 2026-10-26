@@ -12,6 +12,8 @@ import okx_position_monitor
 import execution_quality
 
 def open_trade(decision, risk):
+    if str(decision.get("asset") or "").upper() in config.DISABLED_ENTRY_ASSETS:
+        return {"status":"REJECTED","reason":"ASSET_NEW_ENTRIES_DISABLED"}
     if config.EXECUTION_MODE == "paper":
         return {"status":"ROUTER_PAPER","note":"paper execution handled by trade_cycle"}
 
@@ -194,6 +196,25 @@ def open_trade(decision, risk):
             else pre_order_reference
         )
         rounded_limit=float(adapter.normalize_entry_limit_price(asset,action,raw_limit))
+
+        # DeFi price bands move with the index and can reject otherwise valid
+        # FOK limits (OKX 51006). Fail closed on the actual public band; never
+        # clamp the limit or bypass RR, slippage, drift, or FOK protections.
+        if asset in set(config.DEFI_TRADE_WATCHLIST):
+            try:
+                price_band=adapter.entry_price_limit_guard(asset,action,rounded_limit)
+            except Exception as exc:
+                return {
+                    "status":"REJECTED","reason":"OKX_PRICE_LIMIT_CHECK_UNAVAILABLE",
+                    "stage":"exchange_price_limit","error_type":type(exc).__name__,
+                    "entry_attempts":attempts,
+                }
+            if not price_band["passed"]:
+                return {
+                    "status":"REJECTED","reason":"OKX_PRICE_LIMIT_OUT_OF_BAND",
+                    "stage":"exchange_price_limit","price_limit":price_band,
+                    "entry_attempts":attempts,
+                }
 
         try:
             opened=adapter.open_fok(

@@ -23,7 +23,8 @@ def test_trade_universe_dynamic_defi_and_gold():
         config.NORMAL_GOLD_TRADING_ENABLED=True
         config.NORMAL_DEFI_TRADING_ENABLED=True
         assets=trade_universe.normal_assets(u)
-        assert assets[:4]==("BTC","ETH","GRAM","XAU"),assets
+        assert assets[:3]==("BTC","ETH","XAU"),assets
+        assert "GRAM" not in assets,assets
         assert "UNI" in assets and "AAVE" in assets,assets
         assert "PENDLE" not in assets,assets
         assert "CRV" not in assets,assets
@@ -124,5 +125,5 @@ if __name__=="__main__":
     print({
         "status":"OK",
         "normal_extended_markets":["XAU","DEFI_DYNAMIC_TOP_N"],
-        "micro_unchanged":["BTC","ETH","GRAM"],
+        "micro_allowed":["BTC","ETH"],
     })

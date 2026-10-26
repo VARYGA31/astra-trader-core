@@ -141,6 +141,30 @@ class OKXDemoAdapter:
         r.raise_for_status()
         return self._check(r.json())
 
+    def entry_price_limit_guard(self, asset, action, limit_price):
+        """Check the exchange's live admissible price band without changing FOK."""
+        data=self.public_get("/api/v5/public/price-limit",{"instId":self.inst_id(asset)})
+        rows=data.get("data") or []
+        row=rows[0] if rows else {}
+        if str(row.get("instId") or "")!=self.inst_id(asset):
+            raise OKXAPIError("OKX_PRICE_LIMIT_INSTRUMENT_MISMATCH")
+        side=str(action).upper()
+        key="buyLmt" if side=="LONG" else "sellLmt" if side=="SHORT" else None
+        if not key:
+            raise ValueError("INVALID_ORDER_SIDE")
+        try:
+            bound=float(row[key]); px=float(limit_price)
+            if not (math.isfinite(bound) and math.isfinite(px) and bound>0 and px>0):
+                raise ValueError("NON_FINITE_PRICE_LIMIT")
+        except (KeyError,ValueError,TypeError) as exc:
+            raise OKXAPIError("OKX_PRICE_LIMIT_UNAVAILABLE") from exc
+        passed=px<=bound if side=="LONG" else px>=bound
+        return {
+            "passed":passed,"instrument":self.inst_id(asset),"action":side,
+            "limit_price":px,"exchange_bound":bound,"bound_field":key,
+            "reason":"WITHIN_OKX_PRICE_LIMIT" if passed else "OUTSIDE_OKX_PRICE_LIMIT",
+        }
+
     def balance(self):
         return self.private_get("/api/v5/account/balance")
 
