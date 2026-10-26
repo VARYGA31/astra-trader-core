@@ -15,7 +15,7 @@ import model_budget
 
 INSTRUCTIONS = """You are ASTRA Strategy Tournament v5.1 final selector, a multi-asset trading strategist.
 
-Analyze BTC, ETH and GRAM together. In Tournament v5 you are a FINAL SELECTOR
+Analyze BTC and ETH together. GRAM is disabled for all new entries. In Tournament v5 you are a FINAL SELECTOR
 of pre-built empirically eligible candidate plans. A supplied plan is either
 CHAMPION or low-risk PROBATION; both already passed broad NET-R evidence,
 independent Tournament-v5 confirmation, current-regime checks, and deterministic
@@ -50,7 +50,7 @@ Return exactly one JSON object with:
   "market_summary": "brief",
   "assets": [
     {
-      "asset":"BTC|ETH|GRAM",
+      "asset":"BTC|ETH",
       "score":0-100,
       "bias":"LONG|SHORT|NEUTRAL",
       "preferred_strategy":"NORMAL|SCALP|WAIT",
@@ -61,7 +61,7 @@ Return exactly one JSON object with:
   ],
   "best_opportunity":{
     "candidate_id":"string|null",
-    "asset":"BTC|ETH|GRAM|null",
+    "asset":"BTC|ETH|null",
     "action":"LONG|SHORT|WAIT",
     "strategy":"NORMAL|SCALP|WAIT",
     "scalp_tier":"PRIME|FAST|null",

@@ -5,6 +5,9 @@ import os
 NORMAL_CORE_ASSETS=("BTC","ETH","GRAM")
 DEFI_TRADE_WATCHLIST=("AAVE","UNI","LDO","PENDLE","CRV","MORPHO")
 ALLOWED_ASSETS=NORMAL_CORE_ASSETS+DEFI_TRADE_WATCHLIST+("XAU",)
+# Retain GRAM in the known-asset map for reconciliation and existing exits,
+# while forbidding every new entry regardless of mode or Railway overrides.
+DISABLED_ENTRY_ASSETS=frozenset({"GRAM"})
 STATE_DIR=os.getenv("STATE_DIR","/workspace/data")
 INITIAL_EQUITY=float(os.getenv("INITIAL_EQUITY","100"))
 NORMAL_POSITION_PCT=float(os.getenv("NORMAL_POSITION_PCT","0.10"))
@@ -230,7 +233,8 @@ TELEGRAM_CONTROL_POLL_TIMEOUT = int(os.getenv("TELEGRAM_CONTROL_POLL_TIMEOUT", "
 # ===== ASTRA SCALP v1 =====
 # First version is crypto-only. XAU remains available in NORMAL mode.
 SCALP_ALLOWED_ASSETS = tuple(
-    x.strip().upper() for x in os.getenv("SCALP_ALLOWED_ASSETS", "BTC,ETH,GRAM").split(",") if x.strip()
+    x.strip().upper() for x in os.getenv("SCALP_ALLOWED_ASSETS", "BTC,ETH").split(",")
+    if x.strip() and x.strip().upper() not in DISABLED_ENTRY_ASSETS
 )
 SCALP_DECISION_INTERVAL_SECONDS = int(os.getenv("SCALP_DECISION_INTERVAL_SECONDS", "60"))
 SCALP_MIN_QUALITY = float(os.getenv("SCALP_MIN_QUALITY", "70"))
@@ -293,7 +297,8 @@ SCALP_FAST_MAX_LEVERAGE = float(os.getenv("SCALP_FAST_MAX_LEVERAGE", "3"))
 # Demo-first 1-5 minute execution laboratory: 5m context -> 3m setup -> 1m trigger.
 # v2 adds OKX-native microstructure + fee-aware NET expectancy protection.
 MICRO_ALLOWED_ASSETS = tuple(
-    x.strip().upper() for x in os.getenv("MICRO_ALLOWED_ASSETS", "BTC,ETH,GRAM").split(",") if x.strip()
+    x.strip().upper() for x in os.getenv("MICRO_ALLOWED_ASSETS", "BTC,ETH").split(",")
+    if x.strip() and x.strip().upper() not in DISABLED_ENTRY_ASSETS
 )
 MICRO_DECISION_INTERVAL_SECONDS = int(os.getenv("MICRO_DECISION_INTERVAL_SECONDS", "20"))
 MICRO_NEWS_SETTLE_MINUTES = int(os.getenv("MICRO_NEWS_SETTLE_MINUTES", "3"))
@@ -377,7 +382,8 @@ SCALP_STATS_DEFAULT_HOURS = int(os.getenv("SCALP_STATS_DEFAULT_HOURS", "6"))
 # AUTO mode asks one multi-asset strategist to rank BTC/ETH/GRAM on each new
 # confirmed 5m candle. Python risk/execution remains the final authority.
 ADAPTIVE_ALLOWED_ASSETS = tuple(
-    x.strip().upper() for x in os.getenv("ADAPTIVE_ALLOWED_ASSETS", "BTC,ETH,GRAM").split(",") if x.strip()
+    x.strip().upper() for x in os.getenv("ADAPTIVE_ALLOWED_ASSETS", "BTC,ETH").split(",")
+    if x.strip() and x.strip().upper() not in DISABLED_ENTRY_ASSETS
 )
 ADAPTIVE_DECISION_INTERVAL_SECONDS = int(os.getenv("ADAPTIVE_DECISION_INTERVAL_SECONDS", "60"))
 ADAPTIVE_NEWS_HOURS = int(os.getenv("ADAPTIVE_NEWS_HOURS", "12"))

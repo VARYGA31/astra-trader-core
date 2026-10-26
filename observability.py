@@ -220,6 +220,20 @@ def record_decision(package, gate, decision, execution, model_called=False):
         mtf = gate.get("mtf") or {}
         best = _best_candidate(mtf)
         gate_reason = gate.get("reason")
+        guards=(gate.get("guards") or (package or {}).get("guards") or {})
+        guard_blockers=[]
+        if gate_reason=="GUARD_BLOCK":
+            for key in ("market_ok","news_ok","critical_news_verified",
+                        "xau_session_ok","gold_macro_ok","gold_macro_primary_ok"):
+                if key in guards and guards[key] is False:
+                    guard_blockers.append(key.upper()+"_FALSE")
+            if guards.get("market_stale"):
+                guard_blockers.append("MARKET_STALE")
+            if guards.get("trading_halted"):
+                guard_blockers.append("TRADING_HALTED")
+            for key in ("cooldown","loss_streak_pause"):
+                if (guards.get(key) or {}).get("active"):
+                    guard_blockers.append(key.upper()+"_ACTIVE")
         action = str(decision.get("action") or "WAIT").upper()
         exec_status = str(execution.get("status") or "UNKNOWN")
         exec_reason = _execution_reason(execution)
@@ -230,6 +244,7 @@ def record_decision(package, gate, decision, execution, model_called=False):
             "strategy_mode":str((package or {}).get("strategy_mode") or (decision or {}).get("strategy_mode") or "NORMAL").upper(),
             "model_called": bool(model_called),
             "gate_reason": gate_reason,
+            "guard_blockers":guard_blockers,
             "allowed_direction": gate.get("allowed_direction") or mtf.get("direction"),
             "mtf_quality": gate.get("mtf_quality", mtf.get("quality")),
             "mtf_mode": gate.get("mtf_mode", mtf.get("mode")),
@@ -704,10 +719,12 @@ def _decision_funnel(since_utc=None):
     skips=defaultdict(int)
     rejects=defaultdict(int)
     mtf_blockers=defaultdict(int)
+    guard_blockers=defaultdict(int)
     by_asset=defaultdict(lambda:{
         "decisions":0,"model_calls":0,"model_skips":0,"model_waits":0,"opened":0,
         "skip_reasons":defaultdict(int),
         "mtf_blockers":defaultdict(int),
+        "guard_blockers":defaultdict(int),
         "wait_categories":defaultdict(int),
         "trade_rejection_reasons":defaultdict(int),
         "last_rejection":None,
@@ -744,6 +761,10 @@ def _decision_funnel(since_utc=None):
                     blocker=str(blocker)
                     mtf_blockers[blocker]+=1
                     a["mtf_blockers"][blocker]+=1
+            if skip_reason=="GUARD_BLOCK":
+                for blocker in (x.get("guard_blockers") or []):
+                    guard_blockers[str(blocker)]+=1
+                    a["guard_blockers"][str(blocker)]+=1
 
         ex=x.get("execution") or {}
         status=ex.get("status")
@@ -783,9 +804,10 @@ def _decision_funnel(since_utc=None):
     asset_out={}
     for asset,a in by_asset.items():
         asset_out[asset]={
-            **{k:v for k,v in a.items() if k not in {"skip_reasons","mtf_blockers","wait_categories","trade_rejection_reasons"}},
+            **{k:v for k,v in a.items() if k not in {"skip_reasons","mtf_blockers","guard_blockers","wait_categories","trade_rejection_reasons"}},
             "skip_reasons":dict(sorted(a["skip_reasons"].items(),key=lambda kv:(-kv[1],kv[0]))),
             "mtf_blockers":dict(sorted(a["mtf_blockers"].items(),key=lambda kv:(-kv[1],kv[0]))),
+            "guard_blockers":dict(sorted(a["guard_blockers"].items(),key=lambda kv:(-kv[1],kv[0]))),
             "wait_categories":dict(sorted(a["wait_categories"].items(),key=lambda kv:(-kv[1],kv[0]))),
             "trade_rejection_reasons":dict(sorted(a["trade_rejection_reasons"].items(),key=lambda kv:(-kv[1],kv[0]))),
         }
@@ -801,6 +823,7 @@ def _decision_funnel(since_utc=None):
         "opened_trades":opened,
         "skip_reasons":dict(sorted(skips.items(),key=lambda kv:(-kv[1],kv[0]))),
         "mtf_blockers":dict(sorted(mtf_blockers.items(),key=lambda kv:(-kv[1],kv[0]))),
+        "guard_blockers":dict(sorted(guard_blockers.items(),key=lambda kv:(-kv[1],kv[0]))),
         "trade_rejection_reasons":dict(sorted(rejects.items(),key=lambda kv:(-kv[1],kv[0]))),
         "by_asset":asset_out,
         "by_strategy_mode":dict(by_mode),
