@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timezone
 
 import config
+import os
 import alpha_factory
 import adaptive_trainer
 import strategy_tournament
@@ -28,7 +29,8 @@ def _top(d,n=8):
 
 def build_payload(runtime):
     runtime=runtime or {}
-    perf=observability.trade_performance(None)
+    tracking_since=os.getenv("ASTRA_TRACKING_SINCE_UTC", "").strip() or None
+    perf=observability.trade_performance(tracking_since)
     overall=(perf or {}).get("overall") or {}
     alpha=alpha_factory.summary()
     tournament=strategy_tournament.summary(168) if config.STRATEGY_TOURNAMENT_V5_ENABLED else {"status":"DISABLED","leaderboard":[]}
@@ -36,6 +38,7 @@ def build_payload(runtime):
     micro=micro_stats.summary(6)
     journal=trade_journal.summary()
     diag24=observability.diagnostic_digest(24,5)
+    fresh_funnel=observability._decision_funnel(tracking_since) if tracking_since else (diag24 or {}).get("decision_funnel", {})
     funnel24=(diag24 or {}).get("decision_funnel") or {}
     mode=((runtime.get("strategy_mode") or {}).get("mode") or "UNKNOWN")
     position_check=runtime.get("last_position_check") or {}
@@ -57,10 +60,11 @@ def build_payload(runtime):
             "last_error":runtime.get("last_error"),
         },
         "performance":{
+            "tracking_since_utc":tracking_since,
             "overall":overall,
             "by_asset":(perf or {}).get("by_asset") or {},
             "by_mode":(perf or {}).get("by_strategy_mode") or {},
-            "recent_closed":(journal or {}).get("recent_closed_positions") or [],
+            "recent_closed":[x for x in ((journal or {}).get("recent_closed_positions") or []) if not tracking_since or str(x.get("timestamp_utc") or x.get("closed_at_utc") or "") >= tracking_since],
         },
         "micro":{
             "stats_6h":micro,
@@ -82,6 +86,7 @@ def build_payload(runtime):
         "diagnostics":{
             "top_skip_reasons":_top(runtime.get("skip_reasons") or {},10),
             "decision_funnel_24h":funnel24,
+            "decision_funnel_since_tracking_start":fresh_funnel,
             "mtf_blockers_24h":_top(funnel24.get("mtf_blockers") or {},10),
             "mtf_shadow_replay":(diag24 or {}).get("mtf_shadow_replay") or {},
             "last_trade_rejection":runtime.get("last_trade_rejection"),
