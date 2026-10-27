@@ -294,6 +294,9 @@ SCALP_FAST_LEVERAGE_NORMAL = float(os.getenv("SCALP_FAST_LEVERAGE_NORMAL", "3"))
 SCALP_FAST_MAX_LEVERAGE = float(os.getenv("SCALP_FAST_MAX_LEVERAGE", "3"))
 
 # ===== ASTRA MICRO v2 =====
+# Deployment-level retirement switch; false blocks NEW MICRO entries at every layer.
+# Existing positions and their exchange SL/monitoring are intentionally unaffected.
+MICRO_NEW_ENTRIES_ENABLED = os.getenv("MICRO_NEW_ENTRIES_ENABLED", "true").lower() == "true"
 # Demo-first 1-5 minute execution laboratory: 5m context -> 3m setup -> 1m trigger.
 # v2 adds OKX-native microstructure + fee-aware NET expectancy protection.
 MICRO_ALLOWED_ASSETS = tuple(

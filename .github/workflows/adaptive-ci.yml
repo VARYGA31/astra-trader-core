@@ -92,3 +92,5 @@ jobs:
         run: python test_mtf_explainability.py
       - name: Transition regression
         run: python test_transition_mode.py
+      - name: Simplified NORMAL-only production controls regression
+        run: python test_research_simplification.py

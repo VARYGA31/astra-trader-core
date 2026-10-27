@@ -138,6 +138,8 @@ def execute(decision):
         return {"status":"NO_TRADE","reason":"ASTRA_WAIT"}
     if asset in config.DISABLED_ENTRY_ASSETS:
         return {"status":"REJECTED","reason":"ASSET_NEW_ENTRIES_DISABLED"}
+    if not config.MICRO_NEW_ENTRIES_ENABLED and str(decision.get("strategy_mode") or "").upper() == "MICRO":
+        return {"status":"REJECTED","reason":"MICRO_DISABLED"}
 
     decision_mode=str(decision.get("strategy_mode") or "NORMAL").upper()
     active_mode=strategy_mode.get_mode()

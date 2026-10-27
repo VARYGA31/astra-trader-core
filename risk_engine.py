@@ -124,6 +124,10 @@ def evaluate(d):
 
     if asset not in ALLOWED:return reject("TRADE_NOT_ALLOWED")
     if asset in config.DISABLED_ENTRY_ASSETS:return reject("ASSET_NEW_ENTRIES_DISABLED")
+    if not config.MICRO_NEW_ENTRIES_ENABLED and (
+        str(d.get("strategy_mode") or "").upper()=="MICRO"
+        or str(d.get("mtf_mode") or "").upper()=="MICRO"
+    ):return reject("MICRO_DISABLED")
     if action not in {"LONG","SHORT"}:return reject("NO_ACTION_TO_EXECUTE")
     if str(d.get("data_quality","FAILED")).upper()=="FAILED":return reject("MARKET_DATA_FAILED")
     if not bool(d.get("critical_news_verified",False)):return reject("UNVERIFIED_HIGH_IMPACT_NEWS")

@@ -14,6 +14,11 @@ import execution_quality
 def open_trade(decision, risk):
     if str(decision.get("asset") or "").upper() in config.DISABLED_ENTRY_ASSETS:
         return {"status":"REJECTED","reason":"ASSET_NEW_ENTRIES_DISABLED"}
+    if not config.MICRO_NEW_ENTRIES_ENABLED and (
+        str(decision.get("strategy_mode") or "").upper() == "MICRO"
+        or str(decision.get("mtf_mode") or "").upper() == "MICRO"
+    ):
+        return {"status":"REJECTED","reason":"MICRO_DISABLED"}
     if config.EXECUTION_MODE == "paper":
         return {"status":"ROUTER_PAPER","note":"paper execution handled by trade_cycle"}
 
