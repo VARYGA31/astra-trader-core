@@ -64,6 +64,8 @@ def set_mode(mode, changed_by="SYSTEM"):
     mode = str(mode or "").upper().strip()
     if mode not in ALLOWED:
         raise ValueError(f"INVALID_STRATEGY_MODE:{mode}")
+    if mode == "MICRO" and not config.MICRO_NEW_ENTRIES_ENABLED:
+        raise ValueError("MICRO_DISABLED")
     row = {"mode":mode,"changed_at_utc":_now(),"changed_by":str(changed_by)}
     _atomic_write(row)
     return status()
@@ -73,6 +75,8 @@ def switch_check(current, target, open_positions):
     target = str(target or "").upper()
     if target not in ALLOWED:
         return {"allowed":False,"reason":"INVALID_MODE"}
+    if target == "MICRO" and not config.MICRO_NEW_ENTRIES_ENABLED:
+        return {"allowed":False,"reason":"MICRO_DISABLED"}
     if target == current:
         return {"allowed":True,"reason":"ALREADY_ACTIVE"}
     if target == "PAUSED":
