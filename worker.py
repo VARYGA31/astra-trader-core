@@ -307,7 +307,7 @@ def main():
             if mode!=last_mode:
                 last_decision={a:0 for a in config.ALLOWED_ASSETS}
                 last_mode=mode
-                if mode=="MICRO":
+                if mode=="MICRO" and config.MICRO_NEW_ENTRIES_ENABLED:
                     micro_market_stream.ensure_started()
 
             R["strategy_mode"]=strategy_mode.status()
@@ -368,7 +368,10 @@ def main():
                 last_exit=t
 
             # Only two tradable strategies exist now: NORMAL and MICRO.
-            if config.AUTO_DECISION and mode!="PAUSED" and not R["worker_exception_circuit"].get("active"):
+            if (config.AUTO_DECISION and mode!="PAUSED"
+                and (mode!="MICRO" or config.MICRO_NEW_ENTRIES_ENABLED)
+                and not R["worker_exception_circuit"].get("active")):
+
                 assets=trade_universe.assets_for_mode(mode)
                 interval=config.MICRO_DECISION_INTERVAL_SECONDS if mode=="MICRO" else config.DECISION_INTERVAL_SECONDS
                 gate_module=micro_decision_gate if mode=="MICRO" else decision_gate
