@@ -56,8 +56,8 @@ def get_mode():
 
 def status():
     d = load()
-    d["allowed_modes"] = ["NORMAL","MICRO","PAUSED"]
-    d["retired_modes"] = ["SCALP","AUTO"]
+    d["allowed_modes"] = (["NORMAL","MICRO","PAUSED"] if config.MICRO_NEW_ENTRIES_ENABLED else ["NORMAL","PAUSED"])
+    d["retired_modes"] = (["SCALP","AUTO"] if config.MICRO_NEW_ENTRIES_ENABLED else ["SCALP","AUTO","MICRO"])
     return d
 
 def set_mode(mode, changed_by="SYSTEM"):
