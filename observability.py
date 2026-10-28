@@ -419,6 +419,9 @@ def record_decision(package, gate, decision, execution, model_called=False):
                     "mtf_primary_blocker":mtf.get("primary_blocker") or best.get("primary_blocker"),
                     "minimum_quality": row.get("mtf_minimum_quality"),
                     "regime_4h_ok": best.get("regime_4h_ok"),
+                    # Passive research metadata. Original MTF gate remains authoritative.
+                    "trend_4h": ((mtf.get("frames_summary") or {}).get("4h") or {}).get("trend"),
+                    "volume_ratio_15m": ((mtf.get("frames_summary") or {}).get("15m") or {}).get("volume_ratio"),
                     "setup_1h_ok": best.get("setup_1h_ok"),
                     "trigger_15m_confirmed": best.get("trigger_15m_confirmed"),
                     "trigger_15m_count": best.get("trigger_15m_count"),
