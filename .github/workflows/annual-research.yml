@@ -1,0 +1,48 @@
+name: ASTRA Historical MTF Annual Audit (No Order Authority)
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/annual-research.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  historical-asset:
+    name: "No-order annual audit / ${{ matrix.asset }} / ${{ matrix.days }}d"
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - asset: BTC
+            days: 365
+          - asset: ETH
+            days: 365
+          - asset: AAVE
+            days: 365
+          # XAU-USDT-SWAP was listed in 2026; do not invent older candles.
+          - asset: XAU
+            days: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Validate offline backtest invariants
+        run: python test_historical_normal_research.py
+      - name: Download confirmed historical OKX swap candles and audit
+        run: python historical_normal_research.py --days ${{ matrix.days }} --assets ${{ matrix.asset }} --output historical_${{ matrix.asset }}.json
+      - name: Publish source-attributed report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "annual-mtf-${{ matrix.asset }}"
+          path: "historical_${{ matrix.asset }}.json"
+          if-no-files-found: ignore
