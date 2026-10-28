@@ -92,7 +92,35 @@ jobs:
         run: python test_mtf_explainability.py
       - name: Read-only mixed 4H cohort regression
         run: python test_mixed4h_research.py
+      - name: Historical NORMAL walk-forward mechanics regression
+        run: python test_historical_normal_research.py
       - name: Transition regression
         run: python test_transition_mode.py
       - name: Simplified NORMAL-only production controls regression
         run: python test_research_simplification.py
+
+  historical-research:
+    name: Historical technical research (read-only; data availability independent)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Offline researcher safety preflight
+        run: python test_historical_normal_research.py
+      - name: Historical OKX candles - 45 days + 39-day EMA warmup
+        run: python historical_normal_research.py --days 45 --assets BTC ETH XAU AAVE --output historical_normal_result.json
+      - name: Publish reproducible summary (if data available)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-normal-research
+          path: historical_normal_result.json
+          if-no-files-found: ignore
