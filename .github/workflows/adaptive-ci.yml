@@ -90,6 +90,8 @@ jobs:
         run: python test_observability.py
       - name: MTF explainability + shadow replay regression
         run: python test_mtf_explainability.py
+      - name: Gate vs Risk Engine quality thresholds regression
+        run: python test_mtf_risk_quality_alignment.py
       - name: Read-only mixed 4H cohort regression
         run: python test_mixed4h_research.py
       - name: Historical NORMAL walk-forward mechanics regression
