@@ -74,15 +74,18 @@ def analyze(exchange,tracked,pending_by_type,complete=True):
             results.append({"asset":asset,"status":"UNKNOWN","reason":"POSITION_SIDE_UNAVAILABLE"})
             continue
         candidates=pending.get(inst,[])
-        matches=[x for x in candidates if not x["side"] or x["side"]==expected_side]
+        matches=[x for x in candidates if x["side"]==expected_side]
+        side_unknown=[x for x in candidates if not x["side"]]
         wrong_side=[x for x in candidates if x["side"] and x["side"]!=expected_side]
         known_size=[x["qty"] for x in matches if x["qty"] is not None]
-        unknown_size=any(x["qty"] is None for x in matches)
+        unknown_size=bool(side_unknown) or any(x["qty"] is None for x in matches)
         coverage=sum(known_size)
         # A TP/SL split can cover a position through multiple attached algos.
         # Quantity is a CONTRACT count. Do not assert full protection if size
         # or trade direction is missing from the exchange's response.
-        if not matches:
+        if not matches and side_unknown:
+            status="UNKNOWN"
+        elif not matches:
             status="MISSING_STOP_ALGO"
         elif unknown_size:
             status="UNKNOWN"
