@@ -72,7 +72,10 @@ def fetch(session, inst, tf, since_ms, end_ms, max_pages=600):
         raise RuntimeError("INSUFFICIENT_HISTORY "+inst+" "+tf)
     if rows[-1]["open_time_ms"]<end_ms-3*BAR[tf]:
         raise RuntimeError("STALE_HISTORY "+inst+" "+tf)
-    gaps=sum((b["open_time_ms"]-a["open_time_ms"])>2*BAR[tf] for a,b in zip(rows,rows[1:]))
+    gaps=sum((b["open_time_ms"]-a["open_time_ms"])>2*BAR[tf]
+        and not (inst.startswith("XAU-") and
+                 b["open_time_ms"]-a["open_time_ms"]<=72*3600000)
+        for a,b in zip(rows,rows[1:]))
     if gaps>max(3,len(rows)//100):
         raise RuntimeError("HISTORY_GAPS "+inst+" "+tf+" "+str(gaps))
     return rows
@@ -211,28 +214,34 @@ def main():
     t_start=int((now-timedelta(days=args.days)).timestamp()*1000)
     warm=int((now-timedelta(days=args.days+39)).timestamp()*1000)
     outputs={}
+    errors={}
     results={mode:[] for mode in MODES}
     with requests.Session() as session:
         for asset in args.assets:
             if asset not in ASSETS or asset in config.DISABLED_ENTRY_ASSETS:
                 ap.error("invalid/disabled asset: "+asset)
             data={}
-            for tf in ("4h","1h","15m"):
-                data[tf]=fetch(session,ASSETS[asset]["okx_swap"],tf,
-                    warm,t_end,max_pages=args.max_pages)
-                print("HISTORY_LOADED",asset,tf,len(data[tf]),flush=True)
-            trades,missing=simulate(data,asset,t_start,t_end,args.cost_pct)
+            try:
+                for tf in ("4h","1h","15m"):
+                    data[tf]=fetch(session,ASSETS[asset]["okx_swap"],tf,
+                        warm,t_end,max_pages=args.max_pages)
+                    print("HISTORY_LOADED",asset,tf,len(data[tf]),flush=True)
+                trades,missing=simulate(data,asset,t_start,t_end,args.cost_pct)
+            except (RuntimeError,requests.RequestException) as exc:
+                errors[asset]=str(exc)[:200]
+                print("HISTORY_FAILED",asset,errors[asset],flush=True)
+                continue
             outputs[asset]={"missing_bars":missing,
                 "signals":{k:len(trades[k]) for k in MODES}}
             for k in MODES:
                 results[k].extend(trades[k])
-    report={"status":"RESEARCH_ONLY","orders_possible":False,
+    report={"status":"RESEARCH_ONLY" if not errors else "PARTIAL" if outputs else "DATA_UNAVAILABLE","orders_possible":False,
         "data_source":"OKX_LIVE_PUBLIC_SWAP_HISTORY_NOT_DEMO",
         "window_days":args.days,"asof_utc":now.isoformat(),
         "friction_assumption_pct_round_trip":args.cost_pct,
         "execution_assumptions":"Next-15m open; 1.25x 1H ATR stop (0.5%-3%); 2R target; 4h timeout; stop first on simultaneous hits",
         "not_modeled":"LLM, live news/macro, portfolio risk, liquidity, FOK, bid/ask, funding, exchange differences",
-        "assets":outputs,
+        "assets":outputs,"data_errors":errors,
         "strategies":{m:{phase:metrics(sorted((x for x in results[m] if x["phase"]==phase),
                           key=lambda v:v["entry_time_ms"]))
                  for phase in ("development","validation")} for m in MODES}}
