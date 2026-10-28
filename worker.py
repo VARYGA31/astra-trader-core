@@ -9,6 +9,7 @@ import adaptive_memory,adaptive_cost,adaptive_trainer,multi_market_trainer,strat
 import position_exit_guard
 import fok_shadow_analyzer,exit_shadow_tournament
 import execution_audit
+import mixed4h_research
 import telegram_notifier
 from astra_client import decide
 
@@ -81,6 +82,13 @@ def _trip_worker_circuit(consecutive,stage,error_type):
             state["alert_failed"]=True
     return state
 
+def _safe_mixed4h_research():
+    """Passive research errors must not interrupt position monitoring."""
+    try:
+        return mixed4h_research.summary(168)
+    except Exception as exc:
+        return {"status":"ERROR","error_type":type(exc).__name__,"read_only":True}
+
 def _heartbeat(mode):
     """Emit a compact, secret-free runtime summary for Railway diagnostics."""
     try:
@@ -152,6 +160,7 @@ def _heartbeat(mode):
                 "trades_by_asset":(perf24.get("by_asset") or {}),
                 "recent_closed":diag24.get("recent_closed") or [],
             },
+            "mixed4h_research":_safe_mixed4h_research(),
             "stop_execution_audit":execution_audit.stop_exit_audit(diag24.get("recent_closed") or []),
             "shadow_lab_status":crypto_shadow_lab.STATE.get("status"),
             "model_budget":{
