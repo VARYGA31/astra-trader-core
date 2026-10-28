@@ -188,7 +188,16 @@ def evaluate(package):
         return {"passed":False,"direction":None,"quality":0,"reason":"MTF_DATA_FAILED","mode":None}
 
     asset=str(package.get("asset","")).upper()
-    min_quality=config.XAU_MTF_MIN_QUALITY if asset=="XAU" else config.MTF_MIN_QUALITY
+    # Mirror Risk Engine's NORMAL MTF quality floor before calling the paid
+    # decision model. Never weaken the final risk check or execution guards.
+    # Crypto: max(MTF_MIN_QUALITY, MIN_TRADE_CONFIDENCE)
+    # DeFi: DEFI_TRADE_MIN_QUALITY, XAU: XAU_MTF_MIN_QUALITY.
+    if asset=="XAU":
+        min_quality=config.XAU_MTF_MIN_QUALITY
+    elif asset in set(config.DEFI_TRADE_WATCHLIST):
+        min_quality=config.DEFI_TRADE_MIN_QUALITY
+    else:
+        min_quality=max(config.MTF_MIN_QUALITY,config.MIN_TRADE_CONFIDENCE)
     transition_enabled=bool(config.MTF_TRANSITION_ENABLED and asset!="XAU")
 
     candidates=[]
