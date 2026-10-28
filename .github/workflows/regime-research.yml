@@ -1,0 +1,50 @@
+name: ASTRA Independent Regime Research (No Order Authority)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "regime_strategy_lab.py"
+      - "test_regime_strategy_lab.py"
+      - ".github/workflows/regime-research.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  no-order-lab:
+    name: "Regime lab / ${{ matrix.asset }} / ${{ matrix.days }}d"
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - asset: BTC
+            days: 365
+          - asset: ETH
+            days: 365
+          - asset: AAVE
+            days: 365
+          - asset: XAU
+            days: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: No-order regression
+        run: python test_regime_strategy_lab.py
+      - name: Run fixed-hypothesis OKX public-history research
+        run: python regime_strategy_lab.py --days ${{ matrix.days }} --assets ${{ matrix.asset }} --output regime_${{ matrix.asset }}.json
+      - name: Publish research report only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "regime-lab-${{ matrix.asset }}"
+          path: "regime_${{ matrix.asset }}.json"
+          if-no-files-found: ignore
