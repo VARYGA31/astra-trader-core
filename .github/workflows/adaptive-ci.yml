@@ -45,6 +45,8 @@ jobs:
         run: python test_equity_guard.py
       - name: Sticky UTC daily loss circuit regression
         run: python test_daily_loss_latch.py
+      - name: Final OKX pre-order UTC loss latch regression
+        run: python test_exchange_final_daily_latch.py
       - name: Worker circuit and MICRO stop protection regression
         run: python test_worker_safety.py
       - name: Passive NORMAL stop-distance audit regression
