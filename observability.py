@@ -694,6 +694,40 @@ def _group_metrics(events, key_fn):
         d[str(key_fn(e) or "UNKNOWN")].append(e)
     return {k:_metrics(v) for k,v in sorted(d.items())}
 
+def _setup_cohorts(events):
+    """Realized outcomes by asset/setup/direction, without suppressing entries.
+
+    A single losing or winning trade is NOT meaningful evidence of edge.
+    This output is strictly observational and has no trade/risk authority.
+    """
+    groups=defaultdict(list)
+    for e in events:
+        key=(
+            str(e.get("asset") or "UNKNOWN").upper(),
+            str(e.get("setup_type") or "UNKNOWN").upper(),
+            str(e.get("side") or "UNKNOWN").upper(),
+        )
+        groups[key].append(e)
+    rows=[]
+    for (asset,setup,side),trades in groups.items():
+        stats=_metrics(trades)
+        n=stats["trades"]
+        rows.append({
+            "asset":asset,
+            "setup_type":setup,
+            "side":side,
+            "trades":n,
+            "net_pnl_usd":stats["net_pnl_usd"],
+            "avg_r":stats["avg_r"],
+            "profit_factor":stats["profit_factor"],
+            "wins":stats["wins"],
+            "losses":stats["losses"],
+            "evidence":"INSUFFICIENT_SAMPLE" if n<30 else "OBSERVATIONAL_ONLY",
+            "eligible_for_auto_blacklist":False,
+        })
+    return sorted(rows,key=lambda row:(-row["trades"],row["asset"],row["setup_type"],row["side"]))
+
+
 def trade_performance(since_utc=None):
     closes=_dedupe_closes(_load_jsonl(TRADE_JOURNAL))
     if since_utc:
@@ -711,6 +745,8 @@ def trade_performance(since_utc=None):
         "by_direction": _group_metrics(closes, lambda e:e.get("side")),
         "by_setup_type": _group_metrics(closes, lambda e:e.get("setup_type")),
         "by_strategy_mode": _group_metrics(closes, lambda e:e.get("strategy_mode") or "NORMAL"),
+        "by_asset_setup_direction":_setup_cohorts(closes),
+        "cohort_policy":"OBSERVATION_ONLY_NO_ASSET_BLACKLIST",
     }
 
 def _decision_funnel(since_utc=None):

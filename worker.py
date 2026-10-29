@@ -162,6 +162,11 @@ def _heartbeat(mode):
             },
             "mixed4h_research":_safe_mixed4h_research(),
             "stop_execution_audit":execution_audit.stop_exit_audit(diag24.get("recent_closed") or []),
+            "trade_setup_learning":{
+                "status":"OBSERVATION_ONLY",
+                "automatic_asset_or_setup_suppression":False,
+                "cohorts":(perf.get("by_asset_setup_direction") or [])[:20],
+            },
             "shadow_lab_status":crypto_shadow_lab.STATE.get("status"),
             "model_budget":{
                 "status":model_budget.summary().get("status"),
