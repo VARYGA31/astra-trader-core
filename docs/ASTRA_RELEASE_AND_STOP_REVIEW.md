@@ -31,3 +31,19 @@ Check the actual 24-hour decision funnel, then the active mode, model budget, MT
 ## Execution slippage forensic review
 
 For adverse close prices (especially large GRAM-related historical anomalies), collect the original order id, attached algo ids, pending/historical algo status, trigger price type (mark/last/index), order fill timestamps and prices, fees/funding, and position side. A market stop trigger does not promise a fill at the trigger level. Attribute the cause only when primary exchange evidence exists; an observational journal alone is insufficient.
+
+
+## Automatic evidence review (read-only)
+
+- Run python research_promotion_contract.py --input regime_BTC.json --output promotion_BTC.json after historical research. The GitHub regime research workflow produces this artifact automatically.
+- Contract: OKX confirmed candles, fixed 70/30 chronological split, preregistered rules, >=30 validation trades per asset/strategy, positive development and validation net R, validation PF >=1.10, positive stressed net R with PF >=1.10 at >=0.24% round-trip costs, and same-asset NORMAL baseline improvement.
+- Even a pass means REQUIRES_NEW_FORWARD_SHADOW. Repeatedly examined historical OOS is not fresh blind testing. Never auto-promote, auto-trade, or blacklist assets.
+- trade_incident_review.py analyzes deduplicated OKX demo closed trades: the setup, side, planned risk, realized PnL, approximate net R, costs, and exit relative to planned stop.
+- CLOSE_REASON_INFERRED_FROM_PRICE is not verified historical order or trigger evidence. Causal attribution stays UNDETERMINED until algo history and exchange fills are checked.
+- Railway heartbeats and Mission Control expose recent incident evidence and next verification steps. They do not control positions, leverage, risk or trade eligibility.
+
+## Data fidelity limitations
+
+- A partial TP or changed protection makes initial notional and initial stop geometry only indicative. Exact fill-level loss requires the historical algo and fill records.
+- Exchange fees and funding can be signed negative amounts; do not subtract them from OKX realizedPnl again.
+- Bad performance in a small sample does not justify removing an entire asset. Diagnose and test fixed hypotheses on unseen forward data.
