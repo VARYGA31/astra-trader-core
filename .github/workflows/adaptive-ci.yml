@@ -43,6 +43,8 @@ jobs:
         run: python test_diagnostic_audit.py
       - name: Mark-to-market equity fail-closed regression
         run: python test_equity_guard.py
+      - name: Sticky UTC daily loss circuit regression
+        run: python test_daily_loss_latch.py
       - name: Worker circuit and MICRO stop protection regression
         run: python test_worker_safety.py
       - name: Passive NORMAL stop-distance audit regression

@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 import config, cooldown, decision_context, paper_execution, risk_engine, decision_gate, mtf_gate, performance_guard
+import daily_loss_latch
 import strategy_mode, scalp_gate, micro_gate
 from okx_demo_adapter import OKXDemoAdapter
 import execution_router
@@ -57,6 +58,8 @@ def account_state():
         active = okx_position_monitor.active_summary()
         upl=active.get("unrealized_pnl_usd",0.0 if not active.get("open_positions") else None)
         equity = equity_guard.snapshot(ledger,unrealized_pnl=upl)
+        daily_latch=(daily_loss_latch.observe(ledger["initial_equity"],equity.get("daily_pnl"))
+                     if equity.get("verified") else {"latched":True,"reason":"EQUITY_UNVERIFIED"})
         dd=(ledger["initial_equity"]-equity["equity"])/ledger["initial_equity"] if equity.get("verified") else 0.0
         if equity.get("verified") and dd>=config.MAX_DRAWDOWN_PCT:
             demo_ledger.halt_for_mark_to_market_drawdown()
@@ -64,6 +67,8 @@ def account_state():
             "initial_equity":ledger["initial_equity"],
             "equity":equity.get("equity",ledger["equity"]),
             "daily_pnl":equity.get("daily_pnl",ledger["daily_pnl"]),
+            "daily_loss_latched":bool(daily_latch.get("latched")),
+            "daily_loss_latch":daily_latch,
             "equity_verified":bool(equity.get("verified")),
             "equity_source":equity.get("source"),
             "equity_error":equity.get("reason"),
@@ -71,7 +76,7 @@ def account_state():
             "current_exposure_usd":active["current_exposure_usd"],
             "open_assets":active.get("assets",[]),
             "exchange_positions":active.get("details",[]),
-            "trading_halted":bool(ledger["trading_halted"] or not equity.get("verified") or dd>=config.MAX_DRAWDOWN_PCT),
+            "trading_halted":bool(ledger["trading_halted"] or daily_latch.get("latched") or not equity.get("verified") or dd>=config.MAX_DRAWDOWN_PCT),
         }
 
     s = paper_execution.status()
@@ -404,6 +409,7 @@ def execute(decision):
         "equity":s["equity"],
         "initial_equity":s["initial_equity"],
         "daily_pnl":s["daily_pnl"],
+        "daily_loss_latched":bool(s.get("daily_loss_latched")),
         "open_positions":s["open_positions"],
         "current_exposure_usd":s["current_exposure_usd"],
         "asset_already_open":g.get("asset_already_open",False),
