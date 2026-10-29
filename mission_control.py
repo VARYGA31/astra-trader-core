@@ -12,6 +12,7 @@ import trade_universe
 import micro_stats
 import trade_journal
 import observability
+import trade_incident_review
 import model_budget
 import agent_council
 import market_scanner
@@ -26,6 +27,17 @@ def _now():
 def _top(d,n=8):
     if not isinstance(d,dict):return []
     return [{"name":k,"value":v} for k,v in sorted(d.items(),key=lambda kv:(-float(kv[1]),kv[0]))[:n]]
+
+def _safe_posttrade_incidents():
+    try:
+        rows=observability._dedupe_closes(
+            observability._load_jsonl(observability.TRADE_JOURNAL)
+        )
+        return trade_incident_review.summarize(rows,limit=5)
+    except Exception as exc:
+        return {"status":"UNKNOWN","read_only":True,
+                "error_type":type(exc).__name__,"automatic_strategy_or_asset_changes":False}
+
 
 def build_payload(runtime):
     runtime=runtime or {}
@@ -63,6 +75,7 @@ def build_payload(runtime):
             "tracking_since_utc":tracking_since,
             "overall":overall,
             "by_asset":(perf or {}).get("by_asset") or {},
+            "by_asset_setup_direction":(perf or {}).get("by_asset_setup_direction") or [],
             "by_mode":(perf or {}).get("by_strategy_mode") or {},
             "recent_closed":[x for x in ((journal or {}).get("recent_closed_positions") or []) if not tracking_since or str(x.get("timestamp_utc") or x.get("closed_at_utc") or "") >= tracking_since],
         },
@@ -92,6 +105,7 @@ def build_payload(runtime):
             "last_trade_rejection":runtime.get("last_trade_rejection"),
             "last_approved_trade":runtime.get("last_approved_trade"),
             "last_model_decision":runtime.get("last_model_decision"),
+            "posttrade_incident_review":_safe_posttrade_incidents(),
             "last_decisions":runtime.get("last_decisions") or {},
         },
     }
@@ -251,6 +265,10 @@ footer{color:#66728e;font-size:10px;text-align:center;padding:24px}
  </section>
 
  <section class="panel pad span12">
+  <div class="section-head"><div><div class="label">TRADE POSTMORTEMS · READ ONLY</div><div class="title">Actual losses, execution evidence & next checks</div></div><div class="muted" id="incidentSummary">—</div></div>
+  <div class="log" id="incidentDossiers">Waiting for closed trade evidence…</div>
+ </section>
+ <section class="panel pad span12">
   <div class="section-head"><div><div class="label">DIAGNOSTICS</div><div class="title">Last decisions / rejection telemetry</div></div></div>
   <div class="log" id="diag">Waiting for telemetry…</div>
  </section>
@@ -318,6 +336,13 @@ function render(d){
  $('exitShadow').textContent=leader.policy||'collecting';
  $('exitShadowMeta').textContent=(et.evaluated_trades||0)+' trades · avg NET '+fmt(leader.avg_net_r,3)+'R · PF '+fmt(leader.profit_factor_r,2);
  const dd=d.diagnostics||{};
+ const reviews=dd.posttrade_incident_review||{};
+ $('incidentSummary').textContent=(reviews.losing_trades||0)+' recorded losses · '+(reviews.exit_price_beyond_planned_stop||0)+' prices beyond planned SL · no automatic bans';
+ $('incidentDossiers').textContent=JSON.stringify((reviews.recent_incidents||[]).map(x=>({
+    asset:x.asset,side:x.side,setup:x.setup_type,reported_exit:x.reported_close_reason,
+    severity:x.severity,cause:x.cause,price:x.price_evidence,
+    costs:x.cost_evidence,next_checks:x.next_evidence_checks
+ })),null,2);
  const diag={model_budget:mb,decision_funnel_24h:dd.decision_funnel_24h,mtf_blockers_24h:dd.mtf_blockers_24h,mtf_shadow_replay:dd.mtf_shadow_replay,fok_shadow:fs,exit_tournament:et,shadow_agent_council:clast,market_scanner:ranks,last_trade_rejection:dd.last_trade_rejection,last_approved_trade:dd.last_approved_trade,last_model_decision:dd.last_model_decision};
  $('diag').textContent=JSON.stringify(diag,null,2);
  drawConstellation(genomes);

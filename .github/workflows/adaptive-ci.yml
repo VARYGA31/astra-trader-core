@@ -51,6 +51,10 @@ jobs:
         run: python test_execution_audit_review.py
       - name: Realized asset/setup direction feedback regression
         run: python test_trade_setup_learning.py
+      - name: Factual posttrade incident review regression
+        run: python test_trade_incident_review.py
+      - name: Research evidence and no-auto-promotion contract regression
+        run: python test_research_promotion_contract.py
       - name: Worker circuit and MICRO stop protection regression
         run: python test_worker_safety.py
       - name: Passive NORMAL stop-distance audit regression
