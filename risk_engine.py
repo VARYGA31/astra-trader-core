@@ -230,6 +230,10 @@ def evaluate(d):
     dd=max(0.0,(init-eq)/init) if init>0 else 1.0
     if dd>=config.MAX_DRAWDOWN_PCT:
         return reject("MAX_DRAWDOWN_REACHED",{"trading_halted":True})
+    # This latch is persisted from the *first* UTC daily-limit breach.
+    # Later balance recovery must never silently re-enable new entries.
+    if bool(d.get("daily_loss_latched")):
+        return reject("DAILY_LOSS_LIMIT_REACHED",{"latched":True})
     if float(d.get("daily_pnl",0))<=-(init*config.DAILY_LOSS_LIMIT_PCT):
         return reject("DAILY_LOSS_LIMIT_REACHED")
     max_open=config.MICRO_MAX_OPEN_POSITIONS if is_micro else config.MAX_OPEN_POSITIONS
