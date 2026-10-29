@@ -7,6 +7,7 @@ import telegram_notifier
 import trade_journal
 import demo_ledger
 import equity_guard
+import daily_loss_latch
 from okx_demo_adapter import OKXDemoAdapter
 import okx_position_monitor
 import execution_quality
@@ -91,8 +92,18 @@ def open_trade(decision, risk):
     if dd>=float(config.MAX_DRAWDOWN_PCT):
         demo_ledger.halt_for_mark_to_market_drawdown()
         return {"status":"REJECTED","reason":"MAX_DRAWDOWN_EXCHANGE_GUARD"}
-    if float(verified_equity["daily_pnl"])<=-(float(ledger["initial_equity"])*config.DAILY_LOSS_LIMIT_PCT):
-        return {"status":"REJECTED","reason":"DAILY_LOSS_EXCHANGE_GUARD"}
+    # Final exchange pre-order guard: a UTC-day breach stays locked even
+    # after conservative marked PnL rebounds. Fail closed on corrupt state.
+    daily_lock=daily_loss_latch.observe(
+        ledger["initial_equity"],verified_equity["daily_pnl"]
+    )
+    if daily_lock.get("latched"):
+        return {
+            "status":"REJECTED",
+            "reason":"DAILY_LOSS_EXCHANGE_GUARD",
+            "stage":"exchange_final_preorder",
+            "daily_loss_latch":daily_lock,
+        }
     exposure_now = float(summary.get("current_exposure_usd", 0))
     proposed = float(risk.get("position_notional_usd", 0))
     exposure_cap_pct = config.MICRO_MAX_TOTAL_EXPOSURE_PCT if strategy_mode=="MICRO" else config.MAX_TOTAL_EXPOSURE_PCT
