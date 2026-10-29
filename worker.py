@@ -9,6 +9,7 @@ import adaptive_memory,adaptive_cost,adaptive_trainer,multi_market_trainer,strat
 import position_exit_guard
 import fok_shadow_analyzer,exit_shadow_tournament
 import execution_audit
+import trade_incident_review
 import mixed4h_research
 import telegram_notifier
 from astra_client import decide
@@ -89,6 +90,19 @@ def _safe_mixed4h_research():
     except Exception as exc:
         return {"status":"ERROR","error_type":type(exc).__name__,"read_only":True}
 
+def _safe_posttrade_incidents():
+    """Passive incident forensics must never interrupt open-position monitoring."""
+    try:
+        closes=observability._dedupe_closes(
+            observability._load_jsonl(observability.TRADE_JOURNAL)
+        )
+        return trade_incident_review.summarize(closes,limit=3)
+    except Exception as exc:
+        return {"status":"UNKNOWN","reason":"INCIDENT_REVIEW_FAILED",
+                "error_type":type(exc).__name__,"read_only":True,
+                "automatic_strategy_or_asset_changes":False}
+
+
 def _heartbeat(mode):
     """Emit a compact, secret-free runtime summary for Railway diagnostics."""
     try:
@@ -162,6 +176,7 @@ def _heartbeat(mode):
             },
             "mixed4h_research":_safe_mixed4h_research(),
             "stop_execution_audit":execution_audit.stop_exit_audit(diag24.get("recent_closed") or []),
+            "posttrade_incident_review":_safe_posttrade_incidents(),
             "trade_setup_learning":{
                 "status":"OBSERVATION_ONLY",
                 "automatic_asset_or_setup_suppression":False,
