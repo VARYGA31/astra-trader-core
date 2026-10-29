@@ -37,6 +37,17 @@ def stop_exit_audit(recent_closed):
             })
         except (TypeError, ValueError, KeyError, ZeroDivisionError):
             continue
-    return {"status":"OK", "closed_sample":len(recent_closed or []),
-            "beyond_stop_count":len(rows), "beyond_stop":rows[-5:],
-            "order_capability":False, "model_capability":False}
+    # Report a visible review-needed status whenever a recorded close
+    # is worse than its planned stop. Do not claim an order execution defect:
+    # a mark-triggered market stop does not guarantee the fill price.
+    worst=max((row["adverse_beyond_stop_r"] for row in rows),default=0.0)
+    return {
+        "status":"NEEDS_EXECUTION_REVIEW" if rows else "NO_ADVERSE_STOP_CLOSES",
+        "closed_sample":len(recent_closed or []),
+        "beyond_stop_count":len(rows),
+        "worst_adverse_beyond_stop_r":round(worst,4),
+        "beyond_stop":rows[-5:],
+        "review_requires":"OKX_ALGO_AND_FILL_HISTORY" if rows else None,
+        "order_capability":False,
+        "model_capability":False,
+    }
