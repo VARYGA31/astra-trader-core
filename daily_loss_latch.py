@@ -45,7 +45,7 @@ def observe(initial_equity, conservative_daily_pnl, asof=None):
             row={}
         except (OSError,ValueError,TypeError):
             return {"latched":True,"reason":"LATCH_STATE_UNREADABLE"}
-        if row.get("date_utc")>day:
+        if row.get("date_utc") and row["date_utc"]>day:
             return {"latched":True,"reason":"LATCH_FUTURE_DATE"}
         if row.get("date_utc")==day and row.get("latched") is True:
             return {"latched":True,"date_utc":day,
