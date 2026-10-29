@@ -6,6 +6,8 @@ on:
     paths:
       - "regime_strategy_lab.py"
       - "test_regime_strategy_lab.py"
+      - "research_promotion_contract.py"
+      - "test_research_promotion_contract.py"
       - ".github/workflows/regime-research.yml"
   workflow_dispatch:
 
@@ -41,10 +43,15 @@ jobs:
         run: python test_regime_strategy_lab.py
       - name: Run fixed-hypothesis OKX public-history research
         run: python regime_strategy_lab.py --days ${{ matrix.days }} --assets ${{ matrix.asset }} --output regime_${{ matrix.asset }}.json
+      - name: Mechanical promotion evidence contract (never places orders)
+        if: always()
+        run: python research_promotion_contract.py --input regime_${{ matrix.asset }}.json --output promotion_${{ matrix.asset }}.json
       - name: Publish research report only
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: "regime-lab-${{ matrix.asset }}"
-          path: "regime_${{ matrix.asset }}.json"
+          path: |
+            regime_${{ matrix.asset }}.json
+            promotion_${{ matrix.asset }}.json
           if-no-files-found: ignore
