@@ -63,7 +63,7 @@ def _operator_demo_balance_adjustment(day,total_eq,raw_day_change,ledger,upl,exc
         realized_today=float(ledger["daily_pnl"])
         if not all(math.isfinite(x) for x in (initial,ledger_eq,realized_today)):
             return raw_day_change,None
-        if (initial<=0 or total_eq+1e-8<ledger_eq
+        if (initial<=0 or total_eq+0.01<ledger_eq
             or realized_today<=-(initial*config.DAILY_LOSS_LIMIT_PCT)
             or raw_day_change>=realized_today-max(0.01,initial*0.001)):
             return raw_day_change,None
