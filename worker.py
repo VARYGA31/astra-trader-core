@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import json,time,threading,traceback,hmac
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
-from datetime import datetime,timezone
+from datetime import datetime,timezone,timedelta
 
 import config,news_listener,position_monitor,trade_cycle,paper_execution,execution_router,decision_gate,observability
 import strategy_mode,micro_decision_gate,telegram_control,micro_stats,micro_market_stream,micro_second_shadow,crypto_shadow_lab,trade_universe,market_scanner,agent_council
@@ -20,6 +20,7 @@ R={
     "last_error":None,
     "worker_exception_circuit":{"active":False,"consecutive":0,"threshold":config.WORKER_EXCEPTION_PAUSE_THRESHOLD},
     "equity_guard":{"verified":None,"status":"NOT_YET_CHECKED"},
+    "entry_halt_diagnostics":{"status":"NOT_YET_CHECKED","trading_permissions_changed":False},
     "execution_mode":config.EXECUTION_MODE,
     "decision_engine_enabled":bool(config.AUTO_DECISION),
     "trade_execution_enabled":bool(config.AUTO_PAPER_EXECUTION),
@@ -103,6 +104,53 @@ def _safe_posttrade_incidents():
                 "automatic_strategy_or_asset_changes":False}
 
 
+def _safe_news_pulse():
+    """24h fact counts from the news journal; no fake news/trade claims."""
+    try:
+        cutoff=now()-timedelta(hours=24)
+        recent=[]
+        for row in observability._load_jsonl(observability.NEWS):
+            ts=observability._parse_ts(row.get("timestamp_utc"))
+            if ts is not None and ts.tzinfo is not None and ts>=cutoff:
+                recent.append(row)
+        by_asset={}
+        for row in recent:
+            asset=str(row.get("asset") or "UNKNOWN").upper()
+            bucket=by_asset.setdefault(asset,{"events":0,"high_impact":0,"high_verified":0})
+            bucket["events"]+=1
+            if row.get("impact_hint")=="HIGH":
+                bucket["high_impact"]+=1
+                if row.get("trade_usable") is True:
+                    bucket["high_verified"]+=1
+        polled=R.get("last_news") or {}
+        health={}
+        for asset,item in (polled.get("health") or {}).items():
+            if not isinstance(item,dict):
+                continue
+            health[asset]={
+                k:item.get(k) for k in (
+                    "events_returned","high_impact_count","unresolved_high_impact_count",
+                    "blocking_unresolved_high_impact_count","source_successes",
+                    "source_failures","data_quality"
+                )
+            }
+        return {
+            "status":"OK" if polled.get("status")=="OK" else "NOT_POLLED_OR_FAILED",
+            "last_poll_at_utc":polled.get("polled_at_utc"),
+            "new_events_last_poll":len(polled.get("new_events") or []),
+            "high_impact_last_poll":len(polled.get("high_impact_new") or []),
+            "journal_24h_events":len(recent),
+            "journal_24h_high_impact":sum(x["high_impact"] for x in by_asset.values()),
+            "journal_24h_verified_high_impact":sum(x["high_verified"] for x in by_asset.values()),
+            "by_asset_24h":by_asset,
+            "last_poll_source_health":health,
+            "news_not_equal_trade_signal":True,
+            "read_only":True,
+        }
+    except Exception as exc:
+        return {"status":"UNKNOWN","error_type":type(exc).__name__,"read_only":True}
+
+
 def _heartbeat(mode):
     """Emit a compact, secret-free runtime summary for Railway diagnostics."""
     try:
@@ -115,6 +163,7 @@ def _heartbeat(mode):
         diag24=observability.diagnostic_digest(24,5)
         funnel24=diag24.get("decision_funnel") or {}
         perf24=diag24.get("trade_performance") or {}
+        R["news_pulse"]=_safe_news_pulse()
         payload={
             "event":"ASTRA_HEARTBEAT",
             "at_utc":now().isoformat(),
@@ -139,6 +188,8 @@ def _heartbeat(mode):
             },
             "worker_exception_circuit":R.get("worker_exception_circuit"),
             "equity_guard":R.get("equity_guard"),
+            "entry_halt_diagnostics":R.get("entry_halt_diagnostics"),
+            "news_pulse":R.get("news_pulse"),
             "multi_market_lab":"ON" if config.MULTI_MARKET_TRAINER_V3_ENABLED else "OFF",
             "micro":{
                 "checks_6h":ms.get("checks",0),
@@ -424,6 +475,9 @@ def main():
                         stage=f"decision_prepare:{a}"
                         p=trade_cycle.prepare(a,12,mode)
                         account=p.get("account_state") or {}
+                        R["entry_halt_diagnostics"]=account.get("entry_halt_diagnostics") or {
+                            "status":"NOT_AVAILABLE","trading_permissions_changed":False
+                        }
                         R["equity_guard"]={
                             "verified":account.get("equity_verified"),
                             "source":account.get("equity_source"),

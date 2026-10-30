@@ -45,6 +45,8 @@ jobs:
         run: python test_equity_guard.py
       - name: Sticky UTC daily loss circuit regression
         run: python test_daily_loss_latch.py
+      - name: Transparent halt causes and news pulse regression
+        run: python test_halt_news_diagnostics.py
       - name: Final OKX pre-order UTC loss latch regression
         run: python test_exchange_final_daily_latch.py
       - name: Stop execution overshoot honest audit regression
