@@ -163,6 +163,7 @@ def _heartbeat(mode):
         diag24=observability.diagnostic_digest(24,5)
         funnel24=diag24.get("decision_funnel") or {}
         perf24=diag24.get("trade_performance") or {}
+        R["news_pulse"]=_safe_news_pulse()
         payload={
             "event":"ASTRA_HEARTBEAT",
             "at_utc":now().isoformat(),
@@ -188,7 +189,7 @@ def _heartbeat(mode):
             "worker_exception_circuit":R.get("worker_exception_circuit"),
             "equity_guard":R.get("equity_guard"),
             "entry_halt_diagnostics":R.get("entry_halt_diagnostics"),
-            "news_pulse":_safe_news_pulse(),
+            "news_pulse":R.get("news_pulse"),
             "multi_market_lab":"ON" if config.MULTI_MARKET_TRAINER_V3_ENABLED else "OFF",
             "micro":{
                 "checks_6h":ms.get("checks",0),
