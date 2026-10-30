@@ -17,7 +17,7 @@ FILE=Path(config.STATE_DIR)/"daily_loss_latch.json"
 LOCK=threading.RLock()
 
 
-def observe(initial_equity, conservative_daily_pnl, asof=None):
+def observe(initial_equity, conservative_daily_pnl, asof=None, operator_demo_balance_ack_date_utc=None):
     """Return {latched: bool, ...}; storage/data errors fail CLOSED.
 
     The persisted marker is date-scoped in UTC; an observed breach never
@@ -48,9 +48,32 @@ def observe(initial_equity, conservative_daily_pnl, asof=None):
         if row.get("date_utc") and row["date_utc"]>day:
             return {"latched":True,"reason":"LATCH_FUTURE_DATE"}
         if row.get("date_utc")==day and row.get("latched") is True:
-            return {"latched":True,"date_utc":day,
-                    "reason":"DAILY_LOSS_LIMIT_REACHED",
-                    "first_breach_at_utc":row.get("first_breach_at_utc")}
+            # A verified-flat demo cash move explicitly acknowledged by the
+            # operator may clear an OLD, balance-only stop ONCE for this UTC
+            # day. Any later true loss breach must remain latched. Never clear
+            # a halt with current realized/adjusted losses beyond the limit.
+            if (config.EXECUTION_MODE=="okx_demo"
+                and operator_demo_balance_ack_date_utc==day
+                and row.get("operator_demo_balance_ack_date_utc")!=day
+                and pnl>-(initial*limit)):
+                cleared={
+                    "date_utc":day,"latched":False,
+                    "operator_demo_balance_ack_date_utc":day,
+                    "original_breach_at_utc":row.get("first_breach_at_utc"),
+                    "operator_acknowledged_at_utc":asof.astimezone(timezone.utc).isoformat(),
+                }
+                try:
+                    FILE.parent.mkdir(parents=True,exist_ok=True)
+                    temp=FILE.with_name(FILE.name+"."+str(threading.get_ident())+".tmp")
+                    temp.write_text(json.dumps(cleared,separators=(",",":")),encoding="utf-8")
+                    temp.replace(FILE)
+                except OSError:
+                    return {"latched":True,"reason":"LATCH_PERSIST_FAILED"}
+                row=cleared
+            else:
+                return {"latched":True,"date_utc":day,
+                        "reason":"DAILY_LOSS_LIMIT_REACHED",
+                        "first_breach_at_utc":row.get("first_breach_at_utc")}
         if pnl>-(initial*limit):
             return {"latched":False,"date_utc":day}
         write={
@@ -58,6 +81,12 @@ def observe(initial_equity, conservative_daily_pnl, asof=None):
             "latched":True,
             "first_breach_at_utc":asof.astimezone(timezone.utc).isoformat(),
             "threshold_usd":round(initial*limit,8),
+            # Persist the one-time acknowledgement marker even on NEW loss,
+            # so it cannot be used a second time to clear a genuine breach.
+            "operator_demo_balance_ack_date_utc":(
+                row.get("operator_demo_balance_ack_date_utc")
+                if row.get("date_utc")==day else None
+            ),
         }
         try:
             FILE.parent.mkdir(parents=True,exist_ok=True)
