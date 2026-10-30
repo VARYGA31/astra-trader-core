@@ -99,6 +99,8 @@ def build_payload(runtime):
         "diagnostics":{
             "top_skip_reasons":_top(runtime.get("skip_reasons") or {},10),
             "decision_funnel_24h":funnel24,
+            "entry_halt_diagnostics":runtime.get("entry_halt_diagnostics") or {},
+            "news_pulse":runtime.get("news_pulse") or {},
             "decision_funnel_since_tracking_start":fresh_funnel,
             "mtf_blockers_24h":_top(funnel24.get("mtf_blockers") or {},10),
             "mtf_shadow_replay":(diag24 or {}).get("mtf_shadow_replay") or {},
@@ -265,6 +267,10 @@ footer{color:#66728e;font-size:10px;text-align:center;padding:24px}
  </section>
 
  <section class="panel pad span12">
+  <div class="section-head"><div><div class="label">ENTRY HALT & NEWS · READ ONLY</div><div class="title">Why no new entries / source verification</div></div></div>
+  <div class="log" id="newsAndHalt">Awaiting verified status…</div>
+ </section>
+ <section class="panel pad span12">
   <div class="section-head"><div><div class="label">TRADE POSTMORTEMS · READ ONLY</div><div class="title">Actual losses, execution evidence & next checks</div></div><div class="muted" id="incidentSummary">—</div></div>
   <div class="log" id="incidentDossiers">Waiting for closed trade evidence…</div>
  </section>
@@ -336,6 +342,11 @@ function render(d){
  $('exitShadow').textContent=leader.policy||'collecting';
  $('exitShadowMeta').textContent=(et.evaluated_trades||0)+' trades · avg NET '+fmt(leader.avg_net_r,3)+'R · PF '+fmt(leader.profit_factor_r,2);
  const dd=d.diagnostics||{};
+ $('newsAndHalt').textContent=JSON.stringify({
+   entry_halt:dd.entry_halt_diagnostics||{},
+   news_last_24h:dd.news_pulse||{},
+   reminder:'News volume alone cannot override validated trading risk guards.'
+ },null,2);
  const reviews=dd.posttrade_incident_review||{};
  $('incidentSummary').textContent=(reviews.losing_trades||0)+' recorded losses · '+(reviews.exit_price_beyond_planned_stop||0)+' prices beyond planned SL · no automatic bans';
  $('incidentDossiers').textContent=JSON.stringify((reviews.recent_incidents||[]).map(x=>({
