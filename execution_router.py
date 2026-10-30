@@ -84,7 +84,10 @@ def open_trade(decision, risk):
 
     ledger = demo_ledger.status()
     upl=summary.get("unrealized_pnl_usd",0.0 if not summary.get("open_positions") else None)
-    verified_equity=equity_guard.snapshot(ledger,unrealized_pnl=upl)
+    verified_equity=equity_guard.snapshot(
+        ledger,unrealized_pnl=upl,
+        exchange_flat=(summary.get("raw_open_position_count")==0),
+    )
     if not verified_equity.get("verified"):
         return {"status":"REJECTED","reason":"OKX_EQUITY_UNAVAILABLE_EXCHANGE_GUARD"}
     equity = float(verified_equity["equity"])
@@ -95,7 +98,8 @@ def open_trade(decision, risk):
     # Final exchange pre-order guard: a UTC-day breach stays locked even
     # after conservative marked PnL rebounds. Fail closed on corrupt state.
     daily_lock=daily_loss_latch.observe(
-        ledger["initial_equity"],verified_equity["daily_pnl"]
+        ledger["initial_equity"],verified_equity["daily_pnl"],
+        operator_demo_balance_ack_date_utc=verified_equity.get("operator_demo_balance_ack_date_utc"),
     )
     if daily_lock.get("latched"):
         return {

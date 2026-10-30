@@ -800,6 +800,11 @@ class OKXDemoAdapter:
                 "upl_usd":p.get("upl"),
             })
         return {
+            # Includes instruments not recognized by ASTRA; never label an
+            # account flat when an untracked OKX position remains open.
+            "raw_open_position_count":sum(
+                1 for p in rows if abs(float(p.get("pos") or 0))>0
+            ),
             "open_positions":len(assets),
             "current_exposure_usd":exposure,
             "unrealized_pnl_usd":unrealized_pnl if upl_complete else None,

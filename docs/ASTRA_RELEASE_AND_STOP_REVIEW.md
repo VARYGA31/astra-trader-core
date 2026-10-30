@@ -47,3 +47,14 @@ For adverse close prices (especially large GRAM-related historical anomalies), c
 - A partial TP or changed protection makes initial notional and initial stop geometry only indicative. Exact fill-level loss requires the historical algo and fill records.
 - Exchange fees and funding can be signed negative amounts; do not subtract them from OKX realizedPnl again.
 - Bad performance in a small sample does not justify removing an entire asset. Diagnose and test fixed hypotheses on unseen forward data.
+
+
+## Explicit one-day OKX DEMO balance change acknowledgement (operator-only)
+
+When a large *non-trade* demo balance movement trips the persistent daily stop, **do not** increase DAILY_LOSS_LIMIT_PCT or delete the ledger. After the operator acknowledges the movement and the account is confirmed flat, set `OKX_DEMO_BALANCE_CHANGE_ACK_DATE_UTC=YYYY-MM-DD` for the affected UTC day. This env setting has no effect on other days or non-demo trading.
+
+The runtime verifies (1) signed OKX demo equity, (2) no open position across **all** returned OKX instruments, including untracked instruments, (3) OKX totalEq at least the bot's ledger equity, (4) today's realized trading PnL is still inside the unchanged daily limit, and (5) a negative account-balance change inconsistent with trading PnL. It then records the exact difference as a **user-acknowledged accounting adjustment**, explicitly *not* as a verified exchange transfer. Its evidence is retained in the daily equity baseline state.
+
+The existing sticky daily-loss latch is cleared **at most once on that UTC date** only if the adjusted trading PnL is within the unchanged limit. Any later loss crosses the exact same daily limit and becomes sticky again; the acknowledgement cannot clear that second breach. Mark-to-market max drawdown, ledger equity, actual OKX totalEq, new stop losses, open position monitoring and order controls remain untouched. Never use this to waive genuine trading losses or assert that a withdrawal/deposit has been independently verified from OKX bills.
+
+Remove the one-day env setting after expiry as operational housekeeping; the daily file remains in the persistent state volume and rolls over naturally at UTC midnight. Check `entry_halt_diagnostics` for original vs adjusted account change and operator acknowledgement before making any claim that entries are enabled.

@@ -15,6 +15,9 @@ MAX_POSITION_PCT=float(os.getenv("MAX_POSITION_PCT","0.20"))
 NORMAL_RISK_PCT=float(os.getenv("NORMAL_RISK_PCT","0.02"))
 HARD_RISK_PCT=float(os.getenv("HARD_RISK_PCT","0.03"))
 DAILY_LOSS_LIMIT_PCT=float(os.getenv("DAILY_LOSS_LIMIT_PCT","0.06"))
+# Explicit one-day operator acknowledgement of an unrelated OKX DEMO cash-balance move.
+# Never rebase on real exchange mode or outside this UTC date; logged/audited.
+OKX_DEMO_BALANCE_CHANGE_ACK_DATE_UTC=os.getenv("OKX_DEMO_BALANCE_CHANGE_ACK_DATE_UTC","").strip()
 MAX_DRAWDOWN_PCT=float(os.getenv("MAX_DRAWDOWN_PCT","0.25"))
 MAX_TOTAL_EXPOSURE_PCT=float(os.getenv("MAX_TOTAL_EXPOSURE_PCT","0.30"))
 MAX_OPEN_POSITIONS=int(os.getenv("MAX_OPEN_POSITIONS","2"))

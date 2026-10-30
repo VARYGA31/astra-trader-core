@@ -57,9 +57,14 @@ def account_state():
         ledger = demo_ledger.status()
         active = okx_position_monitor.active_summary()
         upl=active.get("unrealized_pnl_usd",0.0 if not active.get("open_positions") else None)
-        equity = equity_guard.snapshot(ledger,unrealized_pnl=upl)
-        daily_latch=(daily_loss_latch.observe(ledger["initial_equity"],equity.get("daily_pnl"))
-                     if equity.get("verified") else {"latched":True,"reason":"EQUITY_UNVERIFIED"})
+        equity = equity_guard.snapshot(
+            ledger,unrealized_pnl=upl,
+            exchange_flat=(active.get("raw_open_position_count")==0),
+        )
+        daily_latch=(daily_loss_latch.observe(
+            ledger["initial_equity"],equity.get("daily_pnl"),
+            operator_demo_balance_ack_date_utc=equity.get("operator_demo_balance_ack_date_utc"),
+        ) if equity.get("verified") else {"latched":True,"reason":"EQUITY_UNVERIFIED"})
         dd=(ledger["initial_equity"]-equity["equity"])/ledger["initial_equity"] if equity.get("verified") else 0.0
         if equity.get("verified") and dd>=config.MAX_DRAWDOWN_PCT:
             demo_ledger.halt_for_mark_to_market_drawdown()
@@ -85,6 +90,10 @@ def account_state():
             "daily_loss_latch_reason":daily_latch.get("reason"),
             "daily_loss_latch_date_utc":daily_latch.get("date_utc"),
             "daily_loss_limit_pct":round(config.DAILY_LOSS_LIMIT_PCT*100,3),
+            "operator_demo_balance_ack_date_utc":equity.get("operator_demo_balance_ack_date_utc"),
+            "operator_demo_balance_ack_offset_usd":equity.get("operator_demo_balance_ack_offset_usd"),
+            "raw_account_daily_change_usd":equity.get("account_daily_change"),
+            "adjusted_account_daily_change_usd":equity.get("adjusted_account_daily_change"),
             "conservative_daily_pnl_usd":round(float(equity["daily_pnl"]),5) if equity.get("verified") else None,
             "initial_equity_usd":round(float(ledger["initial_equity"]),3),
             "equity_verified":bool(equity.get("verified")),
