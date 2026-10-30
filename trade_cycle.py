@@ -63,6 +63,33 @@ def account_state():
         dd=(ledger["initial_equity"]-equity["equity"])/ledger["initial_equity"] if equity.get("verified") else 0.0
         if equity.get("verified") and dd>=config.MAX_DRAWDOWN_PCT:
             demo_ledger.halt_for_mark_to_market_drawdown()
+        # Expose the exact entry-stop causes; a healthy worker or verified
+        # exchange balance alone does not mean the entry path is open.
+        reasons=[]
+        if ledger["trading_halted"]:
+            reasons.append("PERSISTED_LEDGER_HALT")
+        if bool(daily_latch.get("latched")):
+            reasons.append("UTC_DAILY_LOSS_LATCH")
+        if not equity.get("verified"):
+            reasons.append("EQUITY_UNVERIFIED")
+        if equity.get("verified") and dd>=config.MAX_DRAWDOWN_PCT:
+            reasons.append("MARK_TO_MARKET_DRAWDOWN_LIMIT")
+        halt_details={
+            "halted":bool(reasons),
+            "reasons":reasons,
+            "ledger_persisted_halt":bool(ledger["trading_halted"]),
+            "ledger_realized_drawdown_pct":round(float(ledger.get("drawdown_pct") or 0)*100,3),
+            "max_drawdown_limit_pct":round(config.MAX_DRAWDOWN_PCT*100,3),
+            "conservative_equity_drawdown_pct":round(max(0.0,dd)*100,3) if equity.get("verified") else None,
+            "daily_loss_latched":bool(daily_latch.get("latched")),
+            "daily_loss_latch_reason":daily_latch.get("reason"),
+            "daily_loss_latch_date_utc":daily_latch.get("date_utc"),
+            "daily_loss_limit_pct":round(config.DAILY_LOSS_LIMIT_PCT*100,3),
+            "conservative_daily_pnl_usd":round(float(equity["daily_pnl"]),5) if equity.get("verified") else None,
+            "initial_equity_usd":round(float(ledger["initial_equity"]),3),
+            "equity_verified":bool(equity.get("verified")),
+            "trading_permissions_changed":False,
+        }
         return {
             "initial_equity":ledger["initial_equity"],
             "equity":equity.get("equity",ledger["equity"]),
@@ -76,7 +103,8 @@ def account_state():
             "current_exposure_usd":active["current_exposure_usd"],
             "open_assets":active.get("assets",[]),
             "exchange_positions":active.get("details",[]),
-            "trading_halted":bool(ledger["trading_halted"] or daily_latch.get("latched") or not equity.get("verified") or dd>=config.MAX_DRAWDOWN_PCT),
+            "trading_halted":bool(halt_details["halted"]),
+            "entry_halt_diagnostics":halt_details,
         }
 
     s = paper_execution.status()
