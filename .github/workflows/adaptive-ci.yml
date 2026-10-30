@@ -47,6 +47,8 @@ jobs:
         run: python test_daily_loss_latch.py
       - name: Transparent halt causes and news pulse regression
         run: python test_halt_news_diagnostics.py
+      - name: One-day OKX demo balance acknowledgement safety regression
+        run: python test_demo_balance_ack.py
       - name: Final OKX pre-order UTC loss latch regression
         run: python test_exchange_final_daily_latch.py
       - name: Stop execution overshoot honest audit regression
