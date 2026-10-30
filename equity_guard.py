@@ -45,6 +45,8 @@ def _operator_demo_balance_adjustment(day,total_eq,raw_day_change,ledger,upl,exc
         state=json.loads(BASELINE.read_text(encoding="utf-8"))
         if state.get("date_utc")!=day:
             return raw_day_change,None
+        if config.EXECUTION_MODE!="okx_demo":
+            return raw_day_change,None
         approved=state.get("operator_demo_balance_ack")
         if isinstance(approved,dict) and approved.get("date_utc")==day:
             offset=float(approved["offset_usd"])
