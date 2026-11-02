@@ -41,7 +41,8 @@ def test_operator_ack_and_new_loss_relocks_once():
         # difference is user-acknowledged, not asserted exchange-verified.
         r2=equity_guard.snapshot(ledger(),provider=lambda:{"data":[{"totalEq":"4808.84666"}]},exchange_flat=True)
         assert r2["verified"] and abs(r2["account_daily_change"]+1199.44334)<0.001,r2
-        assert abs(r2["daily_pnl"])<1e-5,r2
+        # Sub-cent OKX rounding against ledger is conservative, not zeroed.
+        assert -0.01<r2["daily_pnl"]<=0,r2
         assert r2["operator_demo_balance_ack_date_utc"]==day,r2
         first=daily_loss_latch.observe(5000,r2["daily_pnl"],operator_demo_balance_ack_date_utc=day)
         assert first["latched"] is False,first
@@ -68,7 +69,9 @@ def test_no_auto_ack_without_flat_or_without_explicit_date():
             equity_guard._cached_until=0
             equity_guard.snapshot(ledger(),provider=lambda:{"data":[{"totalEq":"6008.29"}]},exchange_flat=flat)
             result=equity_guard.snapshot(ledger(),provider=lambda:{"data":[{"totalEq":"4808.84666"}]},exchange_flat=flat)
-            assert result["daily_pnl"] < -1100,(ack,flat,result)
+            # Even without a one-day acknowledgement, irrelevant totalEq
+            # valuation ABOVE the ledger ceiling is not trade PnL.
+            assert -0.01<result["daily_pnl"]<=0,(ack,flat,result)
             assert result["operator_demo_balance_ack_date_utc"] is None,result
 
 

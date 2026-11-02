@@ -37,6 +37,48 @@ class EquityGuardTests(unittest.TestCase):
         self.assertEqual(result["equity"],9386.0)
         self.assertEqual(result["daily_pnl"],-520.0)
 
+    def test_unrelated_demo_total_equity_swing_above_ledger_cap_not_a_trade_loss(self):
+        # An unrelated crypto/cash portfolio can change by >$1000 while
+        # ASTRA has no realized loss and its admitted risk equity is unchanged.
+        ledger={"equity":4808.85,"daily_pnl":0.0}
+        first=equity_guard.snapshot(
+            ledger,provider=lambda:{"data":[{"totalEq":"6008.29"}]})
+        later=equity_guard.snapshot(
+            ledger,provider=lambda:{"data":[{"totalEq":"5300.00"}]})
+        self.assertTrue(later["verified"],later)
+        self.assertLess(later["account_daily_change"],-700)
+        self.assertEqual(later["daily_pnl"],0.0)
+        self.assertEqual(later["conservative_risk_daily_change"],0.0)
+        self.assertEqual(later["equity"],ledger["equity"])
+
+    def test_total_eq_crossing_below_ledger_cap_is_a_real_drawdown(self):
+        ledger={"equity":4808.85,"daily_pnl":0.0}
+        equity_guard.snapshot(ledger,provider=lambda:{"data":[{"totalEq":"6008.29"}]})
+        result=equity_guard.snapshot(
+            ledger,provider=lambda:{"data":[{"totalEq":"4790.00"}]})
+        self.assertAlmostEqual(result["daily_pnl"],-18.85,places=5)
+        self.assertAlmostEqual(result["conservative_risk_daily_change"],-18.85,places=5)
+        self.assertEqual(result["equity"],4790.0)
+
+    def test_original_raw_baseline_migrates_without_erasing_realized_losses(self):
+        ledger={"equity":4788.85,"daily_pnl":-20.0}
+        from datetime import datetime,timezone
+        today=datetime.now(timezone.utc).date().isoformat()
+        equity_guard.BASELINE.write_text(
+            __import__("json").dumps({
+                "date_utc":today,"starting_total_eq":6008.29,
+                "operator_demo_balance_ack":{"date_utc":"2020-01-01","offset_usd":-7}
+            }),encoding="utf-8"
+        )
+        out=equity_guard.snapshot(
+            ledger,provider=lambda:{"data":[{"totalEq":"5300"}]})
+        self.assertEqual(out["daily_pnl"],-20.0,out)
+        self.assertAlmostEqual(out["conservative_risk_daily_change"],-20,places=5)
+        stored=__import__("json").loads(equity_guard.BASELINE.read_text())
+        self.assertAlmostEqual(stored["starting_risk_equity"],4808.85,places=5)
+        self.assertEqual(stored["starting_total_eq"],6008.29)
+        self.assertIn("operator_demo_balance_ack",stored)
+
     def test_missing_position_upl_is_fail_closed(self):
         result=equity_guard.snapshot(self.ledger,provider=lambda:{"data":[{"totalEq":"9800"}]},unrealized_pnl=None)
         self.assertFalse(result["verified"])

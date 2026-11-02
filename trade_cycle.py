@@ -93,6 +93,8 @@ def account_state():
             "operator_demo_balance_ack_date_utc":equity.get("operator_demo_balance_ack_date_utc"),
             "operator_demo_balance_ack_offset_usd":equity.get("operator_demo_balance_ack_offset_usd"),
             "raw_account_daily_change_usd":equity.get("account_daily_change"),
+            "conservative_risk_daily_change_usd":equity.get("conservative_risk_daily_change"),
+            "daily_change_basis":equity.get("daily_change_basis"),
             "adjusted_account_daily_change_usd":equity.get("adjusted_account_daily_change"),
             "conservative_daily_pnl_usd":round(float(equity["daily_pnl"]),5) if equity.get("verified") else None,
             "initial_equity_usd":round(float(ledger["initial_equity"]),3),

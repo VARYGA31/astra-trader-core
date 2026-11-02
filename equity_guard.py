@@ -33,6 +33,40 @@ def _daily_change(total_eq, day):
     return total_eq-float(data["starting_total_eq"])
 
 
+
+def _conservative_daily_change(day, risk_equity, ledger):
+    """Daily change in the equity ACTUALLY admitted to the risk budget.
+
+    Ignore swings in account totalEq ABOVE our ledger risk ceiling. This
+    matters for OKX demo accounts with unrelated balances/valuation changes.
+    Realized journal losses and negative UPL still count; if exchange equity
+    falls BELOW the ledger ceiling, the entire further decline is counted.
+    Existing raw baselines are migrated conservatively without hiding today's
+    realized ledger PnL. The original raw balance is retained for audit.
+    """
+    state=json.loads(BASELINE.read_text(encoding="utf-8"))
+    if state.get("date_utc")!=day:
+        raise ValueError("STALE_EQUITY_BASELINE")
+    start=state.get("starting_risk_equity")
+    if start is None:
+        raw_start=float(state["starting_total_eq"])
+        ledger_start=float(ledger["equity"])-float(ledger["daily_pnl"])
+        if not all(math.isfinite(v) and v>0 for v in (raw_start,ledger_start)):
+            raise ValueError("INVALID_DAILY_RISK_BASELINE")
+        start=min(raw_start,ledger_start)
+        state["starting_risk_equity"]=start
+        state["risk_change_basis"]="CONSERVATIVE_LEDGER_CAPPED_EQUITY_V2"
+        state["risk_baseline_initialized_at_utc"]=datetime.now(timezone.utc).isoformat()
+        # Preserve preexisting operator acknowledgments and raw baseline.
+        tmp=BASELINE.with_name(BASELINE.name+"."+str(threading.get_ident())+".risk.tmp")
+        tmp.write_text(json.dumps(state,separators=(",",":")),encoding="utf-8")
+        tmp.replace(BASELINE)
+    start=float(start)
+    if not all(math.isfinite(v) and v>0 for v in (start,risk_equity)):
+        raise ValueError("INVALID_DAILY_RISK_EQUITY")
+    return risk_equity-start
+
+
 def _operator_demo_balance_adjustment(day,total_eq,raw_day_change,ledger,upl,exchange_flat):
     """One-time explicit operator accounting adjustment, NOT an OKX transfer proof.
 
@@ -121,16 +155,24 @@ def snapshot(ledger, provider=None, now_seconds=None, unrealized_pnl=0.0, exchan
                 raise ValueError("EXHAUSTED_EQUITY")
             day=datetime.now(timezone.utc).date().isoformat()
             today_change=_daily_change(total_eq,day)
+            conservative_equity=min(total_eq,ledger_eq+min(0.0,upl))
+            risk_today_change=_conservative_daily_change(
+                day,conservative_equity,ledger
+            )
             accounted_change,balance_ack=_operator_demo_balance_adjustment(
                 day,total_eq,today_change,ledger,upl,exchange_flat
             )
             result={
                 "verified":True,
-                "equity":min(total_eq,ledger_eq+min(0.0,upl)),
+                "equity":conservative_equity,
                 "total_eq":total_eq,
                 "ledger_equity":ledger_eq,
-                "daily_pnl":min(float(ledger["daily_pnl"])+min(0.0,upl),accounted_change),
+                # Broker-wide equity swings above our conservatively
+                # ledger-capped budget are NOT losses from ASTRA trading.
+                "daily_pnl":min(float(ledger["daily_pnl"])+min(0.0,upl),risk_today_change),
                 "account_daily_change":today_change,
+                "conservative_risk_daily_change":risk_today_change,
+                "daily_change_basis":"CONSERVATIVE_LEDGER_CAPPED_EQUITY_V2",
                 "adjusted_account_daily_change":accounted_change,
                 "operator_demo_balance_ack_date_utc":(
                     balance_ack.get("date_utc") if balance_ack else None
