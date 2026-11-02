@@ -58,3 +58,17 @@ The runtime verifies (1) signed OKX demo equity, (2) no open position across **a
 The existing sticky daily-loss latch is cleared **at most once on that UTC date** only if the adjusted trading PnL is within the unchanged limit. Any later loss crosses the exact same daily limit and becomes sticky again; the acknowledgement cannot clear that second breach. Mark-to-market max drawdown, ledger equity, actual OKX totalEq, new stop losses, open position monitoring and order controls remain untouched. Never use this to waive genuine trading losses or assert that a withdrawal/deposit has been independently verified from OKX bills.
 
 Remove the one-day env setting after expiry as operational housekeeping; the daily file remains in the persistent state volume and rolls over naturally at UTC midnight. Check `entry_halt_diagnostics` for original vs adjusted account change and operator acknowledgement before making any claim that entries are enabled.
+
+
+## Repeated no-trade days caused by broker-wide demo balance volatility (Nov 2026)
+
+The broker's `totalEq` can include cash, simulated collateral or unrelated assets whose USD valuation moves even when ASTRA has **no** trade fills. On Oct 31 / Nov 1 / Nov 2 the raw daily balance moved significantly and the UTC daily-loss latch persisted, while the local realized-trade journal had no additional close after Oct 29.
+
+To avoid mistaking non-ASTRA broker account fluctuations **above the admitted risk budget** for trading losses, `equity_guard.snapshot` now maintains TWO daily series:
+- `account_daily_change`: raw change in OKX totalEq, for audit only. It is NOT sufficient proof of realized trade PnL.
+- `conservative_risk_daily_change`: change in `min(totalEq, ledger_equity + min(0, verified_position_unrealized_pnl))`. This is the equity actually used for entry size and max drawdown, so fluctuations in surplus demo account equity above the ledger cap cannot trigger a fictional trading loss.
+- Daily loss remains the **minimum** of the ledger's actual realized daily trading PnL plus negative position UPL and the conservative risk-equity change. Both ledger daily-loss and exchange-equity losses below the cap remain blocking.
+- Existing legacy raw daily baseline files migrate to a schema-tagged, audited daily risk baseline using `min(original_day_open_totalEq, current_ledger_equity - ledger_daily_realized_pnl)`. Prior raw day opening is retained for audit. This migration does not delete the ledger, reset realized losses, or raise position equity.
+- An already-fired latch on the day of the migration remains sticky unless the operator's **separate, date-scoped** existing OKX DEMO acknowledgement is present and its strict verified-flat checks pass. Any subsequently breached daily trading loss is sticky again.
+
+This is not permission to raise leverage, widen loss limits, bypass SL/TP or increase trading frequency by manipulating account equity.
