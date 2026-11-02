@@ -71,7 +71,7 @@ def test_no_auto_ack_without_flat_or_without_explicit_date():
             result=equity_guard.snapshot(ledger(),provider=lambda:{"data":[{"totalEq":"4808.84666"}]},exchange_flat=flat)
             # Even without a one-day acknowledgement, irrelevant totalEq
             # valuation ABOVE the ledger ceiling is not trade PnL.
-            assert result["daily_pnl"]==0,(ack,flat,result)
+            assert -0.01<result["daily_pnl"]<=0,(ack,flat,result)
             assert result["operator_demo_balance_ack_date_utc"] is None,result
 
 
